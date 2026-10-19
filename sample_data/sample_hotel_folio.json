@@ -1,0 +1,14 @@
+{
+  "document_type": "hotel_invoice",
+  "hotel_name": "Grand Hotel Wien",
+  "city": "Vienna",
+  "country": "Austria",
+  "guest_name": "Alex Miller",
+  "check_in": "2025-06-10",
+  "check_out": "2025-06-11",
+  "room_rate_eur": 185.00,
+  "breakfast_included": true,
+  "breakfast_note": "Complimentary buffet breakfast included in corporate room rate",
+  "total_eur": 185.00,
+  "payment_method": "Corporate Mastercard (ending 4892)"
+}
