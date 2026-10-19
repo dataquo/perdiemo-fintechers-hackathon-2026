@@ -1,0 +1,20 @@
+{
+  "year": 2025,
+  "include_routes": true,
+  "trips": [
+    {
+      "id_cesty": "HACKATHON-DEMO-001",
+      "ucel_cesty": "Client Negotiations & Technology Demonstration",
+      "vlastnictvi_vozidla": "SLUZEBNI",
+      "bezplatna_strava": {"2025-06-11": ["snidane"]},
+      "itinerar": [
+        {"typ": "ODJEZD", "datum": "2025-06-10T07:00", "misto": "Prague", "vzdalenost_km": 0, "transport_type": "company_car", "country_code": "CZE"},
+        {"typ": "HRANICE_PRECHOD", "datum": "2025-06-10T09:30", "misto": "Mikulov", "vzdalenost_km": 200, "transport_type": "company_car", "country_code": "CZE"},
+        {"typ": "PRIJEZD", "datum": "2025-06-10T11:00", "misto": "Vienna", "vzdalenost_km": 80, "transport_type": "company_car", "country_code": "AUT"},
+        {"typ": "NÁVRAT_ODJEZD", "datum": "2025-06-11T16:00", "misto": "Vienna", "vzdalenost_km": 0, "transport_type": "company_car", "country_code": "AUT"},
+        {"typ": "HRANICE_NAVRAT", "datum": "2025-06-11T17:30", "misto": "Mikulov", "vzdalenost_km": 80, "transport_type": "company_car", "country_code": "CZE"},
+        {"typ": "KREUZ_NAVRAT", "datum": "2025-06-11T20:00", "misto": "Prague", "vzdalenost_km": 200, "transport_type": "company_car", "country_code": "CZE"}
+      ]
+    }
+  ]
+}

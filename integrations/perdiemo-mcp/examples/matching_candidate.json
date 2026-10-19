@@ -1,0 +1,8 @@
+{
+  "candidate_trip_id": "candidate-001",
+  "matched_transaction_ids": ["txn-001", "txn-003"],
+  "possible_destination": "Vienna",
+  "evidence": ["hotel in Vienna", "restaurant in Vienna"],
+  "confirmed": false,
+  "missing_fields": ["departure_time", "return_time", "border_crossing_times", "meal_provision_status"]
+}
