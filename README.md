@@ -4,8 +4,9 @@
 > **Track 06:** Finance Operations & Back-Office AI  
 > **Challenge:** Automating back-office document controls, statutory per diems, and corporate expense reconciliation for **Komerční banka** & enterprise clients.
 
+[![Version](https://img.shields.io/badge/Release-v1.1.0-blue?style=flat-square)](AGENTS.md)
 [![API Live](https://img.shields.io/badge/PerDiemo%20API-Online%20v1.0-10b981?style=flat-square)](https://perdiemo-backend-production.onrender.com)
-[![Bedrock](https://img.shields.io/badge/AWS%20Bedrock-Claude%203.5%20Sonnet-f59e0b?style=flat-square)](https://aws.amazon.com/bedrock/)
+[![Bedrock](https://img.shields.io/badge/AWS%20Bedrock-Claude%20Sonnet%204.5-f59e0b?style=flat-square)](https://aws.amazon.com/bedrock/)
 [![Compliance](https://img.shields.io/badge/Compliance-Czech%20Labour%20Code%20%C2%A7%C2%A0151--189-0284c7?style=flat-square)](https://www.perdiemo.eu/cz/legislativa)
 [![Demo](https://img.shields.io/badge/Dashboard-Streamlit-ff4b4b?style=flat-square)](app.py)
 
@@ -100,24 +101,26 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configure Environment Variables
-Copy the template configuration:
-```bash
-cp .env.example .env
-```
-Fill in your AWS Bedrock credentials provided by the hackathon organizers:
+Copy the template configuration or edit `.env`:
 ```ini
 AWS_REGION=eu-central-1
-AWS_ACCESS_KEY_ID=your_hackathon_access_key
-AWS_SECRET_ACCESS_KEY=your_hackathon_secret_key
+AWS_PROFILE=martin-hackathon
+BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-5-20250929-v1:0
 PERDIEMO_API_URL=https://perdiemo-backend-production.onrender.com
 ```
-*(Note: If AWS credentials are not yet available, `agent_intake.py` includes automatic mock fallbacks so you can test immediately!)*
 
-### 3. Launch Interactive Demo Dashboard
+### 3. Verify AWS & Statutory Engine Setup
 ```bash
-streamlit run app.py
+uv run python test_aws.py
+```
+
+### 4. Launch Interactive Demo Dashboard
+```bash
+uv run streamlit run app.py
 ```
 Open your browser at `http://localhost:8501`.
+
+For architecture details, data contracts, and AI agent prompt specifications, see [AGENTS.md](AGENTS.md).
 
 ---
 

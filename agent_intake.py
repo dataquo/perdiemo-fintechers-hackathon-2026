@@ -11,17 +11,22 @@ import sys
 import json
 import base64
 from typing import Dict, Any, Optional
-from dotenv import load_dotenv
-
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
-BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0")
+# In Europe, Claude runs through EU cross-region inference profiles, so model ID needs 'eu.' prefix:
+# Sonnet 4.5: eu.anthropic.claude-sonnet-4-5-20250929-v1:0 (recommended for extraction accuracy)
+# Haiku 4.5:  eu.anthropic.claude-haiku-4-5-20251001-v1:0 (recommended for high-volume drafting)
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 EXTRACTION_SYSTEM_PROMPT = """You are an expert corporate travel auditor and multimodal parser for Czech statutory per diem accounting.
 Your task is to analyze travel documents (flight boarding passes, train bookings, hotel folios, taxi receipts) or text logs, and extract a structured travel itinerary complying with statutory accounting rules.
@@ -70,10 +75,18 @@ class BedrockIntakeAgent:
         if self._client is None:
             try:
                 import boto3
-                self._client = boto3.client(
-                    service_name="bedrock-runtime",
-                    region_name=self.region_name
-                )
+                profile = os.environ.get("AWS_PROFILE")
+                if profile:
+                    session = boto3.Session(profile_name=profile)
+                    self._client = session.client(
+                        service_name="bedrock-runtime",
+                        region_name=self.region_name
+                    )
+                else:
+                    self._client = boto3.client(
+                        service_name="bedrock-runtime",
+                        region_name=self.region_name
+                    )
             except Exception as e:
                 print(f"[WARN] Failed to initialize AWS Bedrock client: {e}. Falling back to mock generator.")
                 self._client = None
@@ -105,10 +118,27 @@ class BedrockIntakeAgent:
             )
             response_body = json.loads(response["body"].read().decode("utf-8"))
             content_text = response_body["content"][0]["text"]
-            return json.loads(content_text)
+            return self._clean_json(content_text)
         except Exception as e:
             print(f"[ERROR] Bedrock invocation failed: {e}. Using fallback mock.")
             return self._mock_extraction(travel_text)
+
+    @staticmethod
+    def _clean_json(text: str) -> Dict[str, Any]:
+        """Strip markdown fences and whitespace from LLM response before parsing JSON."""
+        clean = text.strip()
+        if clean.startswith("```json"):
+            clean = clean[7:]
+        elif clean.startswith("```"):
+            clean = clean[3:]
+        if clean.endswith("```"):
+            clean = clean[:-3]
+        clean = clean.strip()
+        start = clean.find("{")
+        end = clean.rfind("}")
+        if start != -1 and end != -1:
+            clean = clean[start:end+1]
+        return json.loads(clean)
 
     def extract_from_image(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> Dict[str, Any]:
         """Multimodal extraction from receipt or ticket image."""
@@ -150,7 +180,7 @@ class BedrockIntakeAgent:
             )
             response_body = json.loads(response["body"].read().decode("utf-8"))
             content_text = response_body["content"][0]["text"]
-            return json.loads(content_text)
+            return self._clean_json(content_text)
         except Exception as e:
             print(f"[ERROR] Bedrock multimodal call failed: {e}. Using fallback mock.")
             return self._mock_extraction("Uploaded document image")

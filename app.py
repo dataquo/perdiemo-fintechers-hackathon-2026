@@ -78,7 +78,16 @@ client, agent, auditor = get_services()
 
 # Sidebar
 with st.sidebar:
-    st.image("https://www.perdiemo.eu/branding/perdiemo-logo.png", width=180)
+    st.markdown("""
+        <div style="padding: 0.5rem 0 1rem 0;">
+            <div style="font-size: 1.7rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                <span>⚖️</span> <span>PerDiemo</span>
+            </div>
+            <div style="font-size: 0.72rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;">
+                Statutory Travel Expense Copilot
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     st.markdown("### 🏆 FinTechers Hackathon 2026")
     st.markdown("**Track 06:** Finance Operations & Back-Office AI")
     st.markdown("**Partner Target:** Komerční banka & Corporate Clients")
@@ -87,12 +96,23 @@ with st.sidebar:
     st.markdown("#### ⚙️ Cloud System Status")
     try:
         health = client.health()
-        st.success(f"PerDiemo API: Online ({health.get('service', 'Engine')})")
+        st.success(f"PerDiemo API: Online (v{health.get('version', '1.0')})")
     except Exception:
         st.warning("PerDiemo API: Cloud Connecting...")
 
     st.markdown(f"**AWS Region:** `{agent.region_name}`")
-    st.markdown(f"**Model:** `{agent.model_id.split(':')[-1]}`")
+    
+    # Clean model display name
+    model_name = agent.model_id
+    if "claude-sonnet-4-5" in model_name:
+        model_display = "Claude Sonnet 4.5 (Bedrock)"
+    elif "claude-haiku-4-5" in model_name:
+        model_display = "Claude Haiku 4.5 (Bedrock)"
+    elif "claude-3-5-sonnet" in model_name:
+        model_display = "Claude 3.5 Sonnet (Bedrock)"
+    else:
+        model_display = model_name.split(":")[-2].split(".")[-1] if ":" in model_name else model_name
+    st.markdown(f"**Model:** `{model_display}`")
     st.divider()
     st.caption("Evidentiary Audit Standard: NSS 3 Afs 97/2025 - 71")
 

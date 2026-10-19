@@ -123,10 +123,10 @@ class BackOfficeAuditor:
             })
 
         # Final Verdict
-        if risk_score >= 40:
-            verdict = "FLAGGED_FOR_REVIEW"
-        elif risk_score >= 70:
+        if risk_score >= 70:
             verdict = "REJECTED"
+        elif risk_score >= 40:
+            verdict = "FLAGGED_FOR_REVIEW"
         else:
             verdict = "APPROVED"
 
