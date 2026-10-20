@@ -1,6 +1,6 @@
-# PerDiemo Copilot — Developer & AI Agent Specification (v1.1.2)
+# PerDiemo Copilot — Developer & AI Agent Specification (v1.1.15)
 
-> **Document Version:** 1.1.2  
+> **Document Version:** 1.1.15  
 > **Release Target:** The FinTechers Hackathon 2026 (Prague)  
 > **Tracks:**  
 > • 🎯 **Track 01:** Agentic Payments & Money Movement (*Challenge: The Self-Reconciling Merchant / Conversational Payment Ops*)  
@@ -26,11 +26,12 @@ PerDiemo Copilot is an autonomous agentic system designed to eliminate corporate
 
 ```mermaid
 flowchart TD
-    subgraph INTAKE["1. Card Feed & Multi-Modal Intake"]
+    subgraph INTAKE["1. Multi-Modal Intake & Card Feeds"]
         A["💳 TSYS Corporate Card Stream<br/>(POS swipes, flights, fuel, hotels, snacks)"] --> C
-        B["🧾 Receipts & Boarding Passes<br/>(PDF, Images, Folios, Cash claims)"] --> C
+        B["🧾 Multi-Receipt & Folio Uploads<br/>(PDF, PNG, JPG, Boarding Passes, Folios)"] --> C
         C["🤖 agent_intake.py<br/>(Bedrock Claude Sonnet 4.5 in eu-central-1)"]
         C --> D["📋 Normalized Statutory Itinerary JSON"]
+        B --> PKG["📦 document_package_auditor.py<br/>(Package Completeness & Cross-Checks)"]
     end
 
     subgraph ENGINE["2. Statutory Cloud Engine"]
@@ -40,8 +41,9 @@ flowchart TD
     end
 
     subgraph AUDIT["3. Komerční Banka Compliance & Net Settlement"]
-        G --> H["🛡️ backoffice_auditor.py<br/>(KB Compliance Rules & Risk Engine)"]
+        G --> H["🛡️ backoffice_auditor.py<br/>(KB Compliance & Cross-Document Fraud Engine)"]
         A --> H
+        PKG --> H
         H --> I["📊 Audit Verdict & Color Coded Findings<br/>(APPROVED / FLAGGED / REJECTED)"]
         H --> J["💰 Net Settlement Formula<br/>(Statutory Per Diem + OOP Cash - Personal Card Offset)"]
     end
@@ -62,7 +64,7 @@ flowchart TD
 
 ---
 
-## 3. Key Architectural Decisions (ADRs v1.1.2)
+## 3. Key Architectural Decisions (ADRs v1.1.15)
 
 ### ADR-01: Bedrock Cross-Region EU Inference Profile
 * **Decision:** Bedrock Claude model ID is set to `eu.anthropic.claude-sonnet-4-5-20250929-v1:0`.
@@ -93,6 +95,10 @@ flowchart TD
 * **Decision:** The Copilot chat interface (`app.py`) maintains a persistent multi-turn thread history with Bedrock Claude Sonnet 4.5, augmented with trip settlement metadata, statutory citations, and card feed context. A dynamic generation button produces randomized real-world European card feeds on demand (flights, trains, buses, personal car fuel, grocery snacks, hotels).
 * **Rationale:** Empowers back-office accountants and corporate travelers to interrogate specific rules, explain deductions, and audit decisions conversationally.
 
+### ADR-08: Multi-Modal Document Package Intake & Cross-Document Fraud Detection (v1.1.15)
+* **Decision:** Bedrock multimodal document parsing supports multi-file drag-and-drop intake (`agent_intake.extract_from_file`), pure-Python PDF extraction (`pypdf`), and automated cross-document package auditing (`document_package_auditor.py`). The auditor automatically detects meal double-dipping fraud (`KB-RULE-01`) when a hotel folio (breakfast included) and a separate breakfast receipt are uploaded in the same expense package.
+* **Rationale:** Replaces artificial manual simulation toggles with deterministic AI-assisted cross-document verification. Using `pypdf` ensures zero external OS binary dependencies (no poppler required on Windows) while maintaining resilient offline mock fallbacks.
+
 ---
 
 ## 4. Data Contracts & Schemas
@@ -100,6 +106,7 @@ flowchart TD
 ### 4.1 Normalized Statutory Itinerary JSON Schema (`agent_intake.py` ➔ `perdiemo_client.py`)
 ```json
 {
+  "document_type": "hotel_folio | boarding_pass | meal_receipt | taxi_receipt | train_ticket | other",
   "ucel_cesty": "Client Negotiations & Technology Demonstration",
   "typ_vozidla": "SLUZEBNI",
   "zamestnanec_jednatel": "Alex Miller",
@@ -139,6 +146,12 @@ flowchart TD
   "hotel_info": {
     "hotel_name": "Grand Hotel Wien",
     "breakfast_included": false
+  },
+  "meal_receipt": {
+    "meal_type": "breakfast | lunch | dinner | null",
+    "date": "2025-06-11",
+    "amount": 28.50,
+    "currency": "EUR"
   }
 }
 ```
@@ -198,7 +211,7 @@ flowchart TD
 ### 5.1 Core Compliance & Fraud Rules
 | Rule ID | Severity | Risk Weight | Statutory Reference | Logic Description |
 |---|---|---|---|---|
-| `KB-RULE-01-MEAL-DOUBLE-DIPPING` | `CRITICAL` / `PASSED` | +45 | §§ 163 & 170 ZP | Verifies whether complimentary hotel breakfast is deducted from per diems. If hotel folio includes breakfast but `bezplatna_strava` does not declare `snidane`, triggers CRITICAL audit alert. |
+| `KB-RULE-01-MEAL-DOUBLE-DIPPING` | `CRITICAL` / `PASSED` | +45 | §§ 163 & 170 ZP | Verifies whether complimentary hotel breakfast is deducted from per diems or if a separate breakfast receipt was claimed despite hotel breakfast being included. Triggers CRITICAL audit alert if hotel folio includes breakfast but `bezplatna_strava` does not declare `snidane` OR if a separate breakfast receipt is claimed. |
 | `KB-RULE-02-WEEKEND-TRAVEL-ANOMALY` | `WARNING` / `PASSED` | +25 | § 156 ZP | Detects trip legs occurring on Saturday or Sunday. Requires explicit business justification keywords (e.g. `conference`, `urgent`, `veletrh`, `audit`) in `ucel_cesty`. |
 | `KB-RULE-03-AUDIT-FINGERPRINT` | `CRITICAL` / `PASSED` | +50 | NSS 3 Afs 97/2025 | Verifies presence and integrity of a 64-character SHA-256 cryptographic seal generated by the statutory calculation engine. |
 | `KB-RULE-04-CARD-RECONCILIATION` | `INFO` | +0 | KB Open Banking | Cross-references declared travel dates with actual corporate credit card swipe timestamps from bank feeds. |
@@ -243,7 +256,14 @@ To eliminate manual back-and-forth between employees and accounting departments,
 
 ### 6.2 Full Verification Suite:
 ```powershell
+# AWS Bedrock connectivity & PerDiemo cloud engine test
 uv run python test_aws.py
+
+# Multi-modal OCR document parser & demo documents test suite (6/6 checks)
+uv run python test_document_parser.py
+
+# Core smoke tests
+uv run pytest tests
 ```
 
 ### 6.3 Launch Interactive Copilot UI:

@@ -17,17 +17,20 @@ import perdiemo_client
 import agent_intake
 import backoffice_auditor
 import morosystems_client
+import document_package_auditor
 
 # Hot reload submodules to bust Streamlit process cache
 importlib.reload(perdiemo_client)
 importlib.reload(agent_intake)
 importlib.reload(backoffice_auditor)
 importlib.reload(morosystems_client)
+importlib.reload(document_package_auditor)
 
 from perdiemo_client import PerDiemoClient
 from agent_intake import BedrockIntakeAgent
 from backoffice_auditor import BackOfficeAuditor
 from morosystems_client import MoroSystemsPaymentClient
+from document_package_auditor import DocumentPackageAuditor
 
 # Streamlit Page Config
 st.set_page_config(
@@ -170,9 +173,10 @@ def get_services():
     agent = BedrockIntakeAgent()
     auditor = BackOfficeAuditor()
     moro_client = MoroSystemsPaymentClient()
-    return client, agent, auditor, moro_client
+    doc_package_auditor = DocumentPackageAuditor()
+    return client, agent, auditor, moro_client, doc_package_auditor
 
-client, agent, auditor, moro_client = get_services()
+client, agent, auditor, moro_client, doc_package_auditor = get_services()
 
 def apply_remediation(rule_id: str, remediation_type: str, key_prefix: str = "tab1"):
     """
@@ -250,11 +254,13 @@ def apply_remediation(rule_id: str, remediation_type: str, key_prefix: str = "ta
             for d in dates:
                 extracted.setdefault("bezplatna_strava", {})[d] = ["snidane"]
             extracted.setdefault("hotel_info", {})["breakfast_included"] = True
-            action_summary = "Applied mandatory statutory meal reduction (70%/25% under § 163 ZP) for breakfast dates."
+            extracted["has_breakfast_receipt"] = False
+            action_summary = "Applied mandatory statutory meal reduction (70%/25% under § 163 ZP) for breakfast dates and resolved double-dipping alert."
 
         elif remediation_type == "confirm_room_only":
             extracted.setdefault("hotel_info", {})["breakfast_included"] = False
             extracted["bezplatna_strava"] = {}
+            extracted["has_breakfast_receipt"] = False
             action_summary = "Confirmed Room-Only accommodation without complimentary breakfast; preserved 100% statutory per diem."
 
         elif remediation_type == "attach_weekend_justification":
@@ -801,10 +807,87 @@ with tab_doc:
         )
         if intake_mode == "Sample Preset":
             trip_text = st.text_area("Trip Description:", value=sample_text, height=120, key="doc_sample_area")
+            files_to_process = None
         elif intake_mode == "Free-form Text / Slack Log":
             trip_text = st.text_area("Trip Description:", placeholder="Paste Slack messages...", height=120, key="doc_free_area")
+            files_to_process = None
         else:
-            uploaded_file = st.file_uploader("Upload Boarding Pass or Hotel Receipt:", type=["jpg", "png", "pdf"], key="doc_uploader")
+            st.markdown("##### 📎 Upload Receipts & Travel Documents (PDF / Images)")
+            uploaded_files = st.file_uploader(
+                "Upload boarding passes, hotel folios, taxi or restaurant receipts:",
+                type=["pdf", "png", "jpg", "jpeg"],
+                accept_multiple_files=True,
+                key="doc_multi_uploader"
+            )
+
+            st.markdown('<div style="font-size: 0.85rem; font-weight: 600; color: #475569; margin-top: 0.4rem;">Or load pre-bundled synthetic test scenarios:</div>', unsafe_allow_html=True)
+            scen_col1, scen_col2, scen_col3 = st.columns(3)
+            with scen_col1:
+                if st.button("📁 Clean Trip", help="Loads flight boarding passes, hotel folio, taxi, and dinner receipts.", use_container_width=True, key="btn_scen_clean"):
+                    st.session_state["selected_demo_scenario"] = "clean"
+            with scen_col2:
+                if st.button("🚨 Double-Dipping", help="Loads Hotel Folio with breakfast + separate breakfast receipt to trigger fraud.", use_container_width=True, key="btn_scen_fraud"):
+                    st.session_state["selected_demo_scenario"] = "fraud"
+            with scen_col3:
+                if st.button("🏖️ Weekend Trip", help="Loads suspicious weekend hotel stay without documented urgency.", use_container_width=True, key="btn_scen_weekend"):
+                    st.session_state["selected_demo_scenario"] = "weekend"
+
+            demo_dir = os.path.join(os.path.dirname(__file__), "demo_documents")
+            files_to_process = []
+
+            # Prioritize uploaded files if any
+            if uploaded_files:
+                st.session_state.pop("selected_demo_scenario", None)
+                for uf in uploaded_files:
+                    b = uf.read()
+                    files_to_process.append({
+                        "name": uf.name,
+                        "bytes": b,
+                        "size": len(b)
+                    })
+                    uf.seek(0)
+            elif st.session_state.get("selected_demo_scenario"):
+                scen = st.session_state["selected_demo_scenario"]
+                preset_filenames = []
+                if scen == "clean":
+                    preset_filenames = [
+                        "boarding_pass_PRG_VIE.pdf",
+                        "hotel_folio_grand_wien.pdf",
+                        "taxi_receipt_airport.pdf",
+                        "restaurant_receipt_dinner.pdf",
+                        "boarding_pass_VIE_PRG.pdf"
+                    ]
+                    st.info("ℹ️ Loaded **Clean Business Trip Scenario** (5 synthetic PDFs).")
+                elif scen == "fraud":
+                    preset_filenames = [
+                        "hotel_folio_grand_wien.pdf",
+                        "breakfast_receipt_fraud.pdf"
+                    ]
+                    st.error("🚨 Loaded **Meal Double-Dipping Fraud Scenario** (Hotel with Breakfast + Separate Breakfast Receipt).")
+                elif scen == "weekend":
+                    preset_filenames = [
+                        "hotel_weekend_suspicious.pdf"
+                    ]
+                    st.warning("⚠️ Loaded **Weekend Travel Anomaly Scenario** (Saturday/Sunday trip leg).")
+
+                for fn in preset_filenames:
+                    fp = os.path.join(demo_dir, fn)
+                    if os.path.exists(fp):
+                        with open(fp, "rb") as f:
+                            content = f.read()
+                            files_to_process.append({
+                                "name": fn,
+                                "bytes": content,
+                                "size": len(content)
+                            })
+
+            if files_to_process:
+                st.markdown(f"**{len(files_to_process)} document(s) ready for autonomous audit:**")
+                for f_item in files_to_process:
+                    fn = f_item["name"]
+                    sz_kb = f_item["size"] / 1024
+                    icon = "🏨" if "hotel" in fn.lower() else ("✈️" if "boarding" in fn.lower() or "pass" in fn.lower() else ("🍳" if "breakfast" in fn.lower() else ("🚕" if "taxi" in fn.lower() else "🧾")))
+                    st.markdown(f"- {icon} `{fn}` ({sz_kb:.1f} KB)")
             trip_text = sample_text
 
         year_select = st.selectbox("Statutory Tax Year:", [2026, 2025, 2024], index=1, key="doc_year")
@@ -816,11 +899,109 @@ with tab_doc:
         if process_doc_btn or "doc_audit_result" in st.session_state:
             if process_doc_btn:
                 st.session_state.pop("doc_payout_receipt", None)
-                with st.spinner("🤖 Bedrock Agent extracting structured statutory itinerary..."):
-                    extracted = agent.extract_from_text(trip_text)
+
+                if intake_mode == "Document Upload (PDF/Image)":
+                    if not files_to_process:
+                        st.warning("Please upload receipts or select a demo scenario above.")
+                        st.stop()
+
+                    extractions = []
+                    combined_itinerary = []
+                    combined_meals = {}
+                    hotel_data = {}
+                    traveler_name = None
+                    trip_purpose = None
+                    has_breakfast_receipt = False
+                    any_hotel_has_breakfast = False
+                    docs_for_pkg = []
+
+                    with st.spinner(f"🤖 Processing {len(files_to_process)} document(s) with Bedrock Multimodal Vision..."):
+                        for f_info in files_to_process:
+                            f_name = f_info["name"]
+                            f_bytes = f_info["bytes"]
+
+                            # Extract text for package auditor
+                            doc_text = ""
+                            if f_name.lower().endswith(".pdf"):
+                                try:
+                                    from pypdf import PdfReader
+                                    reader = PdfReader(io.BytesIO(f_bytes))
+                                    for page in reader.pages[:5]:
+                                        doc_text += (page.extract_text() or "") + "\n"
+                                except Exception:
+                                    doc_text = ""
+
+                            try:
+                                extraction = agent.extract_from_file(f_bytes, f_name)
+                            except Exception as e:
+                                extraction = {"error": str(e)}
+
+                            extractions.append({
+                                "filename": f_name,
+                                "size": f_info["size"],
+                                "data": extraction
+                            })
+
+                            docs_for_pkg.append({
+                                "filename": f_name,
+                                "text": doc_text,
+                                "extracted_data": extraction
+                            })
+
+                            if extraction and not extraction.get("error"):
+                                if extraction.get("itinerary"):
+                                    combined_itinerary.extend(extraction["itinerary"])
+                                if extraction.get("bezplatna_strava"):
+                                    combined_meals.update(extraction["bezplatna_strava"])
+                                if extraction.get("hotel_info", {}).get("hotel_name"):
+                                    hotel_data = extraction["hotel_info"]
+                                    if extraction["hotel_info"].get("breakfast_included"):
+                                        any_hotel_has_breakfast = True
+                                if extraction.get("zamestnanec_jednatel") and not traveler_name:
+                                    traveler_name = extraction["zamestnanec_jednatel"]
+                                if extraction.get("ucel_cesty") and not trip_purpose:
+                                    trip_purpose = extraction["ucel_cesty"]
+
+                                doc_type = extraction.get("document_type", "")
+                                meal_info = extraction.get("meal_receipt", {})
+                                if doc_type == "meal_receipt" and meal_info.get("meal_type") == "breakfast":
+                                    has_breakfast_receipt = True
+
+                    # Run Package Auditor
+                    pkg_audit_res = doc_package_auditor.audit_package(docs_for_pkg)
+
+                    if any_hotel_has_breakfast:
+                        if not hotel_data:
+                            hotel_data = {"hotel_name": "Grand Hotel Wien", "breakfast_included": True}
+                        else:
+                            hotel_data["breakfast_included"] = True
+
+                    # Sort itinerary
+                    combined_itinerary = sorted(combined_itinerary, key=lambda x: str(x.get("datum", "")))
+
+                    extracted = {
+                        "ucel_cesty": trip_purpose or "Client Negotiations & Business Travel",
+                        "typ_vozidla": "SLUZEBNI",
+                        "zamestnanec_jednatel": traveler_name or "Alex Miller",
+                        "spolecnost": "KB Enterprise Client",
+                        "itinerary": combined_itinerary,
+                        "bezplatna_strava": combined_meals,
+                        "hotel_info": hotel_data,
+                        "has_breakfast_receipt": has_breakfast_receipt
+                    }
+
                     if simulate_fraud:
                         extracted["bezplatna_strava"] = {}
                         extracted["hotel_info"]["breakfast_included"] = True
+
+                else:
+                    with st.spinner("🤖 Bedrock Agent extracting structured statutory itinerary..."):
+                        extracted = agent.extract_from_text(trip_text)
+                        if simulate_fraud:
+                            extracted["bezplatna_strava"] = {}
+                            extracted["hotel_info"]["breakfast_included"] = True
+                    extractions = None
+                    pkg_audit_res = None
 
                 with st.spinner("⚖️ Computing allowances via PerDiemo Cloud Engine..."):
                     trips_payload = [{
@@ -840,13 +1021,48 @@ with tab_doc:
                 st.session_state["doc_audit_result"] = {
                     "extracted": extracted,
                     "calc": calc_result,
-                    "audit": audit_report
+                    "audit": audit_report,
+                    "file_extractions": extractions,
+                    "pkg_audit": pkg_audit_res
                 }
 
             doc_res = st.session_state["doc_audit_result"]
             extracted = doc_res.get("extracted", {})
             audit_report = doc_res["audit"]
             meta = doc_res["calc"].get("metadata", {})
+
+            # Document Package Audit summary if files were processed
+            pkg_res = doc_res.get("pkg_audit")
+            if pkg_res:
+                col_pk1, col_pk2 = st.columns([1, 2])
+                with col_pk1:
+                    st.metric("Package Completeness", f"{pkg_res.completeness_score:.0f}%")
+                with col_pk2:
+                    if pkg_res.missing_documents:
+                        st.caption(f"⚠️ Missing: {', '.join(pkg_res.missing_documents)}")
+                    else:
+                        st.caption("✅ All essential travel supporting documents present.")
+
+            file_exts = doc_res.get("file_extractions")
+            if file_exts:
+                with st.expander(f"📄 View Extracted Document Intelligence ({len(file_exts)} documents)", expanded=False):
+                    for item in file_exts:
+                        d_name = item["filename"]
+                        d_data = item.get("data", {})
+                        d_type = d_data.get("document_type", "document")
+                        st.markdown(f"**`{d_name}`** — Type: `{d_type}`")
+                        if d_data.get("hotel_info", {}).get("hotel_name"):
+                            h_name = d_data["hotel_info"]["hotel_name"]
+                            b_inc = d_data["hotel_info"].get("breakfast_included")
+                            st.write(f"- Hotel: **{h_name}** (Breakfast: {'Included' if b_inc else 'Room Only'})")
+                        if d_data.get("meal_receipt", {}).get("meal_type"):
+                            m_type = d_data["meal_receipt"]["meal_type"]
+                            m_amt = d_data["meal_receipt"].get("amount")
+                            m_curr = d_data["meal_receipt"].get("currency", "EUR")
+                            st.write(f"- Meal Receipt: **{m_type.capitalize()}** ({m_amt} {m_curr})")
+                        if d_data.get("itinerary"):
+                            st.write(f"- Itinerary Legs: {len(d_data['itinerary'])} detected")
+                        st.divider()
 
             verdict = audit_report.get("verdict")
             score = audit_report.get("risk_score", 0)

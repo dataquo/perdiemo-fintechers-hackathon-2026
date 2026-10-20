@@ -10,7 +10,8 @@ import os
 import sys
 import json
 import base64
-from typing import Dict, Any, Optional
+import io
+from typing import Dict, Any, Optional, List, Union
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 if hasattr(sys.stderr, 'reconfigure'):
@@ -22,6 +23,24 @@ try:
 except ImportError:
     pass
 
+try:
+    from pypdf import PdfReader
+    HAS_PYPDF = True
+except ImportError:
+    HAS_PYPDF = False
+
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+try:
+    from pdf2image import convert_from_bytes
+    HAS_PDF2IMAGE = True
+except ImportError:
+    HAS_PDF2IMAGE = False
+
 AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
 # In Europe, Claude runs through EU cross-region inference profiles, so model ID needs 'eu.' prefix:
 # Sonnet 4.5: eu.anthropic.claude-sonnet-4-5-20250929-v1:0 (recommended for extraction accuracy)
@@ -29,10 +48,11 @@ AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 EXTRACTION_SYSTEM_PROMPT = """You are an expert corporate travel auditor and multimodal parser for Czech statutory per diem accounting.
-Your task is to analyze travel documents (flight boarding passes, train bookings, hotel folios, taxi receipts) or text logs, and extract a structured travel itinerary complying with statutory accounting rules.
+Your task is to analyze travel documents (flight boarding passes, train bookings, hotel folios, taxi receipts, meal receipts) or text logs, and extract a structured travel itinerary complying with statutory accounting rules.
 
 Return a strictly valid JSON object matching this schema:
 {
+  "document_type": "hotel_folio | boarding_pass | meal_receipt | taxi_receipt | train_ticket | other",
   "ucel_cesty": "string (business purpose, e.g. Client Negotiations)",
   "typ_vozidla": "string (SLUZEBNI for company car/flight/train, or OSOBNI for private vehicle)",
   "zamestnanec_jednatel": "string (traveler name if detected)",
@@ -54,8 +74,18 @@ Return a strictly valid JSON object matching this schema:
   "hotel_info": {
     "hotel_name": "string or null",
     "breakfast_included": true | false
+  },
+  "meal_receipt": {
+    "meal_type": "breakfast | lunch | dinner | null",
+    "date": "YYYY-MM-DD or null",
+    "amount": 0.0,
+    "currency": "EUR | CZK | etc"
   }
 }
+
+IMPORTANT: If this is a meal receipt (restaurant, cafe, etc.), set document_type to "meal_receipt" and fill in the meal_receipt object.
+Classify meal_type based on content: breakfast items (eggs, coffee, croissant, Frühstück, snídaně), lunch, or dinner.
+
 Do not include any commentary, code fences, or explanations. Return ONLY the JSON object.
 """
 
@@ -271,7 +301,7 @@ class BedrockIntakeAgent:
         base64_data = base64.b64encode(image_bytes).decode("utf-8")
         body = {
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "system": EXTRACTION_SYSTEM_PROMPT,
             "messages": [
                 {
@@ -307,9 +337,204 @@ class BedrockIntakeAgent:
             print(f"[ERROR] Bedrock multimodal call failed: {e}. Using fallback mock.")
             return self._mock_extraction("Uploaded document image")
 
+    def extract_from_pdf(self, pdf_bytes: bytes) -> Dict[str, Any]:
+        """Extract from PDF by converting pages to images and processing with vision, or text fallback."""
+        # Try pdf2image first if poppler is installed
+        if HAS_PDF2IMAGE:
+            try:
+                images = convert_from_bytes(pdf_bytes, dpi=200, first_page=1, last_page=5)
+                all_extractions = []
+                for img in images:
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='PNG')
+                    ext = self.extract_from_image(img_byte_arr.getvalue(), mime_type="image/png")
+                    if ext and (ext.get("itinerary") or ext.get("hotel_info") or ext.get("meal_receipt") or ext.get("document_type")):
+                        all_extractions.append(ext)
+                if all_extractions:
+                    return self._merge_extractions(all_extractions)
+            except Exception as e:
+                print(f"[WARN] pdf2image extraction failed: {e}. Trying text fallback.")
+
+        # Fallback to text extraction
+        return self._extract_pdf_text_fallback(pdf_bytes)
+
+    def _extract_pdf_text_fallback(self, pdf_bytes: bytes) -> Dict[str, Any]:
+        """Fallback: extract text from PDF and process as text."""
+        text = ""
+
+        if not text.strip() and HAS_PYPDF:
+            try:
+                reader = PdfReader(io.BytesIO(pdf_bytes))
+                for page in reader.pages[:5]:
+                    text += (page.extract_text() or "") + "\n"
+            except Exception as e:
+                print(f"[WARN] pypdf text extraction failed: {e}")
+
+        if text.strip():
+            return self.extract_from_text(text)
+
+        return self._mock_extraction("PDF document")
+
+    def extract_from_file(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
+        """Auto-detect file type and extract accordingly."""
+        filename_lower = filename.lower()
+
+        if filename_lower.endswith(".pdf"):
+            return self.extract_from_pdf(file_bytes)
+        elif filename_lower.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+            mime_map = {
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".webp": "image/webp",
+                ".gif": "image/gif"
+            }
+            ext = "." + filename_lower.rsplit(".", 1)[-1]
+            mime_type = mime_map.get(ext, "image/jpeg")
+            return self.extract_from_image(file_bytes, mime_type)
+        elif filename_lower.endswith((".txt", ".md", ".csv", ".json")):
+            text = file_bytes.decode("utf-8", errors="ignore")
+            return self.extract_from_text(text)
+        else:
+            try:
+                return self.extract_from_image(file_bytes, "image/jpeg")
+            except Exception:
+                text = file_bytes.decode("utf-8", errors="ignore")
+                return self.extract_from_text(text)
+
+    def _merge_extractions(self, extractions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge multiple page/document extractions into a single result."""
+        if not extractions:
+            return self._mock_extraction("merged document")
+
+        merged = extractions[0].copy()
+
+        for ext in extractions[1:]:
+            if ext.get("itinerary"):
+                merged.setdefault("itinerary", []).extend(ext["itinerary"])
+
+            if ext.get("bezplatna_strava"):
+                merged.setdefault("bezplatna_strava", {}).update(ext["bezplatna_strava"])
+
+            if ext.get("hotel_info") and not merged.get("hotel_info", {}).get("hotel_name"):
+                merged["hotel_info"] = ext["hotel_info"]
+            elif ext.get("hotel_info", {}).get("breakfast_included"):
+                if "hotel_info" not in merged:
+                    merged["hotel_info"] = {}
+                merged["hotel_info"]["breakfast_included"] = True
+
+            if ext.get("ucel_cesty") and not merged.get("ucel_cesty"):
+                merged["ucel_cesty"] = ext["ucel_cesty"]
+
+            if ext.get("zamestnanec_jednatel") and not merged.get("zamestnanec_jednatel"):
+                merged["zamestnanec_jednatel"] = ext["zamestnanec_jednatel"]
+
+            # Merge meal_receipt or document_type
+            if ext.get("document_type") == "meal_receipt" or ext.get("meal_receipt"):
+                merged["document_type"] = ext.get("document_type", "meal_receipt")
+                if ext.get("meal_receipt"):
+                    merged["meal_receipt"] = ext["meal_receipt"]
+
+        if merged.get("itinerary"):
+            merged["itinerary"] = sorted(
+                merged["itinerary"],
+                key=lambda x: str(x.get("datum", ""))
+            )
+
+        return merged
+
     def _mock_extraction(self, input_summary: str) -> Dict[str, Any]:
         """Deterministic mock data for rapid development before AWS keys are entered."""
+        input_lower = input_summary.lower()
+
+        # Check for specific document types in mock mode
+        if "breakfast" in input_lower or "frühstück" in input_lower or "cafe" in input_lower or "restaurant" in input_lower or "dinner" in input_lower or "schnitzel" in input_lower:
+            is_breakfast = "breakfast" in input_lower or "frühstück" in input_lower or "snidan" in input_lower
+            return {
+                "document_type": "meal_receipt",
+                "ucel_cesty": "Client Dinner / Refreshment",
+                "typ_vozidla": "SLUZEBNI",
+                "zamestnanec_jednatel": "Alex Miller",
+                "spolecnost": "Komerční banka Corporate Client",
+                "itinerary": [],
+                "bezplatna_strava": {},
+                "hotel_info": {"hotel_name": None, "breakfast_included": False},
+                "meal_receipt": {
+                    "meal_type": "breakfast" if is_breakfast else "dinner",
+                    "date": "2025-06-11" if is_breakfast else "2025-06-10",
+                    "amount": 28.50 if is_breakfast else 65.00,
+                    "currency": "EUR"
+                }
+            }
+
+        if "boarding" in input_lower or "flight" in input_lower or "prg" in input_lower or "vie" in input_lower:
+            is_return = "vie_prg" in input_lower or "return" in input_lower or "vienna to prague" in input_lower
+            if is_return:
+                return {
+                    "document_type": "boarding_pass",
+                    "ucel_cesty": "Client Negotiations & Technology Demonstration",
+                    "typ_vozidla": "SLUZEBNI",
+                    "zamestnanec_jednatel": "Alex Miller",
+                    "spolecnost": "Komerční banka Corporate Client",
+                    "itinerary": [
+                        {
+                            "typ": "ODJEZD",
+                            "datum": "2025-06-11T16:00",
+                            "misto": "Vienna",
+                            "vzdalenost_km": 0.0,
+                            "transport_type": "plane",
+                            "country_code": "AUT",
+                            "layover_type": None
+                        },
+                        {
+                            "typ": "PRIJEZD",
+                            "datum": "2025-06-11T17:00",
+                            "misto": "Prague",
+                            "vzdalenost_km": 300.0,
+                            "transport_type": "plane",
+                            "country_code": "CZE",
+                            "layover_type": None
+                        }
+                    ],
+                    "bezplatna_strava": {},
+                    "hotel_info": {"hotel_name": None, "breakfast_included": False}
+                }
+            else:
+                return {
+                    "document_type": "boarding_pass",
+                    "ucel_cesty": "Client Negotiations & Technology Demonstration",
+                    "typ_vozidla": "SLUZEBNI",
+                    "zamestnanec_jednatel": "Alex Miller",
+                    "spolecnost": "Komerční banka Corporate Client",
+                    "itinerary": [
+                        {
+                            "typ": "ODJEZD",
+                            "datum": "2025-06-10T08:00",
+                            "misto": "Prague",
+                            "vzdalenost_km": 0.0,
+                            "transport_type": "plane",
+                            "country_code": "CZE",
+                            "layover_type": None
+                        },
+                        {
+                            "typ": "PRIJEZD",
+                            "datum": "2025-06-10T09:00",
+                            "misto": "Vienna",
+                            "vzdalenost_km": 300.0,
+                            "transport_type": "plane",
+                            "country_code": "AUT",
+                            "layover_type": "meeting"
+                        }
+                    ],
+                    "bezplatna_strava": {},
+                    "hotel_info": {"hotel_name": None, "breakfast_included": False}
+                }
+
+        has_hotel = "hotel" in input_lower or "folio" in input_lower or "wien" in input_lower or "kempinski" in input_lower
+        hotel_breakfast = ("breakfast" in input_lower and "included" in input_lower) or "grand hotel" in input_lower or "complimentary" in input_lower
+
         return {
+            "document_type": "hotel_folio" if has_hotel else "other",
             "ucel_cesty": "Client Negotiations & Technology Demonstration",
             "typ_vozidla": "SLUZEBNI",
             "zamestnanec_jednatel": "Alex Miller",
@@ -372,10 +597,10 @@ class BedrockIntakeAgent:
             ],
             "bezplatna_strava": {
                 "2025-06-11": ["snidane"]
-            },
+            } if hotel_breakfast else {},
             "hotel_info": {
-                "hotel_name": "Grand Hotel Wien",
-                "breakfast_included": True
+                "hotel_name": "Grand Hotel Wien" if has_hotel else None,
+                "breakfast_included": hotel_breakfast if has_hotel else False
             }
         }
 

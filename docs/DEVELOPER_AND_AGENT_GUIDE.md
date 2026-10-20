@@ -1,7 +1,7 @@
-# PerDiemo Copilot — Developer & AI Agent Operations Guide (v1.1.2)
+# PerDiemo Copilot — Developer & AI Agent Operations Guide (v1.1.15)
 
-> **Release Version:** `v1.1.2`  
-> **Date:** October 19, 2026  
+> **Release Version:** `v1.1.15`  
+> **Date:** October 20, 2026  
 > **Event:** The FinTechers Hackathon 2026 (Prague) — Track 06 (Back-Office AI) & Track 01  
 > **Target Audience:** Core Developers, AI Coding Assistants (Antigravity, Cursor, Kiro, Claude Code)
 
@@ -35,10 +35,10 @@ PerDiemo Copilot is an autonomous agentic system automating business travel expe
 |                                   +-----------+------------+        SHA-256 Audit Seal)            |
 |                                               |                                                    |
 |                                               v                                                    |
-|                                   +------------------------+                                       |
-|                                   |  backoffice_auditor.py |  <---  TSYS / KB Card Feeds           |
-|                                   | (Fraud & Anomaly Rules)|        (Double-dipping, Weekend trips)|
-|                                   +------------------------+                                       |
+|   +--------------------------+    +------------------------+                                       |
+|   | document_package_auditor | -> |  backoffice_auditor.py |  <---  TSYS / KB Card Feeds           |
+|   | (Completeness & Checks)  |    | (Fraud & Anomaly Rules)|        (Double-dipping, Weekend trips)|
+|   +--------------------------+    +------------------------+                                       |
 +----------------------------------------------------------------------------------------------------+
 ```
 
@@ -108,8 +108,10 @@ cp .env.example .env
 # Routine daily login:
 .\aws_login.ps1
 
-# Verify credentials, S3 datasets & Bedrock Claude 4.5 access:
-python test_aws.py
+# Full verification suite:
+uv run python test_aws.py             # Bedrock & Cloud Engine
+uv run python test_document_parser.py # Multimodal OCR & Demo Documents (6/6 checks)
+uv run pytest tests                   # Core smoke tests
 ```
 
 ### 3.3 Running the Application

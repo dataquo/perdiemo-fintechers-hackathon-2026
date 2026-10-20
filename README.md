@@ -4,7 +4,7 @@
 > 🎯 **Track 01:** Agentic Payments & Money Movement (*Challenge: The Self-Reconciling Merchant / Conversational Payment Ops*)  
 > 🛡️ **Track 06:** Finance Operations & Back-Office AI (*Partner Challenge: Automating Back-Office Document Controls — Komerční banka*)
 
-[![Version](https://img.shields.io/badge/Release-v1.1.2-blue?style=flat-square)](AGENTS.md)
+[![Version](https://img.shields.io/badge/Release-v1.1.15-blue?style=flat-square)](AGENTS.md)
 [![API Live](https://img.shields.io/badge/PerDiemo%20API-Online%20v1.0-10b981?style=flat-square)](https://perdiemo-backend-production.onrender.com)
 [![Bedrock](https://img.shields.io/badge/AWS%20Bedrock-Claude%20Sonnet%204.5-f59e0b?style=flat-square)](https://aws.amazon.com/bedrock/)
 [![Payments](https://img.shields.io/badge/MoroSystems-Payments%20Sandbox-8b5cf6?style=flat-square)](https://tsys-api.morosystems.cloud)
@@ -20,13 +20,15 @@ Corporate travel expense reporting (*vyúčtování pracovních cest*) is notori
 2. **Audit Exposure (NSS 3 Afs 97/2025 - 71):** In tax audits, the burden of proof is on the employer to prove trip facticity and exact statutory calculations. Without cryptographic evidence, companies face heavy penalties.
 3. **Delayed Reimbursement:** Employees wait weeks for payroll to process out-of-pocket cash expenses and statutory per diems.
 
-### The Solution: PerDiemo Copilot
-An autonomous agentic loop connecting **corporate credit cards (TSYS Sandbox)** to the **PerDiemo Statutory Engine** and **MoroSystems Payments Sandbox**:
-- **Proactive Card Ingestion:** Agent monitors corporate card streams, identifies foreign travel charges (ÖBB, Grand Hotel Wien, Uber, Shell), and clusters them into trips.
+### The Solution: PerDiemo Copilot (v1.1.15)
+An autonomous agentic loop connecting **corporate credit cards (TSYS Sandbox)** and **multi-modal travel documents** to the **PerDiemo Statutory Engine** and **MoroSystems Payments Sandbox**:
+- **Proactive Card Ingestion & Clustering:** Agent monitors corporate card streams, identifies foreign travel charges (ÖBB, Grand Hotel Wien, Uber, Shell), and clusters them into trips.
+- **Multi-Modal Document Intake & OCR:** Ingests boarding passes, hotel folios, and meal receipts via Bedrock Claude Sonnet 4.5 vision and pure-Python PDF extraction (`pypdf`), classifying document types and verifying package completeness.
+- **Automated Fraud & Anomaly Detection:** Detects meal double-dipping fraud under §§ 163 & 170 ZP (e.g. hotel with breakfast + separate breakfast receipt) and weekend travel anomalies under § 156 ZP.
 - **Automated Statutory Calculation:** Computes legally binding Czech per diems (§§ 151–189 ZP), meal reductions (70%/35%/25%), and ČNB currency fixings sealed with a **tamper-proof SHA-256 signature**.
 - **Net Reconciliation Engine:** Offsets personal expenses on company cards (e.g. Billa grocery snack), reimburses out-of-pocket cash (taxi), and calculates exact net dues.
 - **Safe Agentic Money Movement:** Executes the net reimbursement payout into the employee's IBAN via **MoroSystems Payments API** with human-in-the-loop confirmation.
-- **Conversational Payment Ops:** Instant natural-language explanations citing exact transactions and statutory articles.
+- **Conversational Payment Ops & 1-Click Remediation:** Instant natural-language explanations citing exact transactions, statutory articles, and one-click accountant remediation buttons.
 
 ---
 
@@ -34,32 +36,35 @@ An autonomous agentic loop connecting **corporate credit cards (TSYS Sandbox)** 
 
 ```mermaid
 flowchart TD
-    subgraph INTAKE["1. Card Stream & Intake"]
+    subgraph INTAKE["1. Card Stream & Multi-Modal Intake"]
         A["💳 TSYS / Corporate Card Feed<br/>(Raw Transactions & Swipes)"]
-        B["🧾 Receipts / Cash Claims<br/>(Vienna Taxi, Hotel Folio)"]
+        B["🧾 Multi-Receipt & Folio Uploads<br/>(PDFs, PNG, JPG, Boarding Passes)"]
+        PKG["📦 document_package_auditor.py<br/>(Package Completeness & Cross-Checks)"]
     end
 
     subgraph AGENT["2. Bedrock AgentCore (Claude Sonnet 4.5)"]
-        C["🤖 Proactive Clustering Agent<br/>(Detects trip window, hotel breakfast, personal spend)"]
+        C["🤖 agent_intake.py<br/>(Extracts itineraries, lodging, free meals & classifications)"]
         D["📋 Normalized Statutory Itinerary JSON"]
     end
 
     subgraph ENGINE["3. PerDiemo Cloud Engine"]
-        E["⚖️ POST /api/calculate<br/>(Statutory rates, CNB daily FX, § 163/170 ZP)"]
+        E["⚖️ POST /api/calculate<br/>(Statutory rates, ČNB daily FX, § 163/170 ZP)"]
         F["🔒 Tamper-Proof SHA-256 Audit Seal"]
     end
 
     subgraph AUDIT["4. Reconciliation & Net Settlement Engine"]
-        G["🛡️ KB Compliance Rules & Offset Engine<br/>• Statutory Per Diem: +2,062.94 CZK<br/>• Out-of-Pocket Taxi: +628.00 CZK<br/>• Personal Card Offset: -372.96 CZK<br/>• Net Reimbursement: 2,317.98 CZK"]
+        G["🛡️ backoffice_auditor.py<br/>• Double-Dipping & Anomaly Detection<br/>• Statutory Per Diem: +2,062.94 CZK<br/>• Out-of-Pocket Taxi: +628.00 CZK<br/>• Personal Card Offset: -372.96 CZK<br/>• Net Reimbursement: 2,317.98 CZK"]
     end
 
     subgraph MONEY["5. Agentic Payments Sandbox (MoroSystems)"]
-        H["💬 Conversational Payment Ops UI<br/>(Explain match & Human Confirmation Gate)"]
+        H["💬 Conversational Payment Ops & Explain Modal<br/>(1-Click Manager Remediation Gate)"]
         I["🚀 MoroSystems Payments Sandbox<br/>(POST /api/v1/payments -> CERTIS/SEPA Instant)"]
     end
 
     A --> C
     B --> C
+    B --> PKG
+    PKG --> G
     C --> D
     D --> E
     E --> F
@@ -114,9 +119,16 @@ BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-5-20250929-v1:0
 PERDIEMO_API_URL=https://perdiemo-backend-production.onrender.com
 ```
 
-### 3. Verify AWS & Statutory Engine Setup
+### 3. Verify AWS, OCR & Statutory Engine Setup
 ```bash
+# Verify AWS Bedrock & PerDiemo Cloud Engine
 uv run python test_aws.py
+
+# Verify Multi-Modal OCR Document Parser & Demo Datasets (6/6 checks)
+uv run python test_document_parser.py
+
+# Run Core Smoke Tests
+uv run pytest tests
 ```
 
 ### 4. Launch Interactive Demo Dashboard
