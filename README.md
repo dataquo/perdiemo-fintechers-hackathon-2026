@@ -1,12 +1,13 @@
-# PerDiemo Copilot — Autonomous Travel Expense & Back-Office Audit Agent
+# PerDiemo Copilot — Self-Reconciling Travel Card & Autonomous Payout Agent
 
 > **The FinTechers Hackathon 2026 (Prague)**  
-> **Track 06:** Finance Operations & Back-Office AI  
-> **Challenge:** Automating back-office document controls, statutory per diems, and corporate expense reconciliation for **Komerční banka** & enterprise clients.
+> 🎯 **Track 01:** Agentic Payments & Money Movement (*Challenge: The Self-Reconciling Merchant / Conversational Payment Ops*)  
+> 🛡️ **Track 06:** Finance Operations & Back-Office AI (*Partner Challenge: Automating Back-Office Document Controls — Komerční banka*)
 
-[![Version](https://img.shields.io/badge/Release-v1.1.0-blue?style=flat-square)](AGENTS.md)
+[![Version](https://img.shields.io/badge/Release-v1.1.2-blue?style=flat-square)](AGENTS.md)
 [![API Live](https://img.shields.io/badge/PerDiemo%20API-Online%20v1.0-10b981?style=flat-square)](https://perdiemo-backend-production.onrender.com)
 [![Bedrock](https://img.shields.io/badge/AWS%20Bedrock-Claude%20Sonnet%204.5-f59e0b?style=flat-square)](https://aws.amazon.com/bedrock/)
+[![Payments](https://img.shields.io/badge/MoroSystems-Payments%20Sandbox-8b5cf6?style=flat-square)](https://tsys-api.morosystems.cloud)
 [![Compliance](https://img.shields.io/badge/Compliance-Czech%20Labour%20Code%20%C2%A7%C2%A0151--189-0284c7?style=flat-square)](https://www.perdiemo.eu/cz/legislativa)
 [![Demo](https://img.shields.io/badge/Dashboard-Streamlit-ff4b4b?style=flat-square)](app.py)
 
@@ -14,18 +15,18 @@
 
 ## 🎯 Executive Summary & Problem Statement
 
-Business travel expense reporting (*cestovní náhrady*) is one of the most error-prone back-office operations for corporate accounting departments and bank business clients:
-1. **Complex Legislation:** Czech Labour Code (*Zákon č. 262/2006 Sb., §§ 151–189*) mandates multi-tiered daily per diem rates, strict meal deductions (70%/35%/25% per meal), and decisive daily Czech National Bank (ČNB) foreign exchange fixing.
-2. **Back-Office Manual Burden:** Accountants manually review paper receipts, flight tickets, hotel folios, and bank statements to detect meal double-dipping, weekend travel, and duplicate claims.
-3. **Audit Risk:** Under Czech Supreme Administrative Court case law (**NSS 3 Afs 97/2025 - 71**), the evidentiary burden rests on the employer to prove trip facticity and exact calculation integrity during tax audits.
+Corporate travel expense reporting (*vyúčtování pracovních cest*) is notoriously broken for both commercial banks (like **Komerční banka**) and enterprise CFOs:
+1. **Administrative Friction:** Employees dread collecting receipts and filling out complex expense forms. Back-office accountants spend weeks manually checking hotel folios, cross-referencing card statements, and enforcing Czech Labour Code (§§ 151–189 ZP) meal deductions.
+2. **Audit Exposure (NSS 3 Afs 97/2025 - 71):** In tax audits, the burden of proof is on the employer to prove trip facticity and exact statutory calculations. Without cryptographic evidence, companies face heavy penalties.
+3. **Delayed Reimbursement:** Employees wait weeks for payroll to process out-of-pocket cash expenses and statutory per diems.
 
 ### The Solution: PerDiemo Copilot
-An autonomous end-to-end agentic workflow that:
-- **Ingests** receipts, boarding passes, and natural language trip notes via **AWS Bedrock (Claude 3.5 Sonnet / Textract)**.
-- **Normalizes** unstructured travel events into standardized statutory itineraries.
-- **Calculates** legally binding travel allowances and ČNB currency fixings via the **PerDiemo REST API** (`https://perdiemo-backend-production.onrender.com`).
-- **Audits** expense claims with automated fraud and anomaly detection (Komerční banka corporate card matching, meal double-dipping detection, weekend claims verification).
-- **Protects** the company with cryptographic **SHA-256 tamper-proof audit verification signatures**.
+An autonomous agentic loop connecting **corporate credit cards (TSYS Sandbox)** to the **PerDiemo Statutory Engine** and **MoroSystems Payments Sandbox**:
+- **Proactive Card Ingestion:** Agent monitors corporate card streams, identifies foreign travel charges (ÖBB, Grand Hotel Wien, Uber, Shell), and clusters them into trips.
+- **Automated Statutory Calculation:** Computes legally binding Czech per diems (§§ 151–189 ZP), meal reductions (70%/35%/25%), and ČNB currency fixings sealed with a **tamper-proof SHA-256 signature**.
+- **Net Reconciliation Engine:** Offsets personal expenses on company cards (e.g. Billa grocery snack), reimburses out-of-pocket cash (taxi), and calculates exact net dues.
+- **Safe Agentic Money Movement:** Executes the net reimbursement payout into the employee's IBAN via **MoroSystems Payments API** with human-in-the-loop confirmation.
+- **Conversational Payment Ops:** Instant natural-language explanations citing exact transactions and statutory articles.
 
 ---
 
@@ -33,25 +34,28 @@ An autonomous end-to-end agentic workflow that:
 
 ```mermaid
 flowchart TD
-    subgraph INTAKE["1. Multi-modal Intake"]
-        A["📄 Receipts & Flight Tickets (PDF / Images)"]
-        B["💬 Natural Language Travel Log (Slack / WhatsApp)"]
+    subgraph INTAKE["1. Card Stream & Intake"]
+        A["💳 TSYS / Corporate Card Feed<br/>(Raw Transactions & Swipes)"]
+        B["🧾 Receipts / Cash Claims<br/>(Vienna Taxi, Hotel Folio)"]
     end
 
-    subgraph AGENT["2. AWS Bedrock AgentCore"]
-        C["🤖 Claude 3.5 Sonnet Intake Agent<br/>(Extracts dates, transport, hotel, meals)"]
-        D["📋 Normalized Itinerary JSON"]
+    subgraph AGENT["2. Bedrock AgentCore (Claude Sonnet 4.5)"]
+        C["🤖 Proactive Clustering Agent<br/>(Detects trip window, hotel breakfast, personal spend)"]
+        D["📋 Normalized Statutory Itinerary JSON"]
     end
 
     subgraph ENGINE["3. PerDiemo Cloud Engine"]
         E["⚖️ POST /api/calculate<br/>(Statutory rates, CNB daily FX, § 163/170 ZP)"]
-        F["🔒 SHA-256 Cryptographic Audit Seal"]
+        F["🔒 Tamper-Proof SHA-256 Audit Seal"]
     end
 
-    subgraph AUDIT["4. KB Back-Office Auditor"]
-        G["🛡️ Rule Engine & Anomaly Detector<br/>(Duplicate detection, meal overlap, corporate card matching)"]
-        H["📊 Interactive Review Dashboard (Streamlit)"]
-        I["📥 1-Click Accounting Export (Pohoda XML / CSV)"]
+    subgraph AUDIT["4. Reconciliation & Net Settlement Engine"]
+        G["🛡️ KB Compliance Rules & Offset Engine<br/>• Statutory Per Diem: +2,062.94 CZK<br/>• Out-of-Pocket Taxi: +628.00 CZK<br/>• Personal Card Offset: -372.96 CZK<br/>• Net Reimbursement: 2,317.98 CZK"]
+    end
+
+    subgraph MONEY["5. Agentic Payments Sandbox (MoroSystems)"]
+        H["💬 Conversational Payment Ops UI<br/>(Explain match & Human Confirmation Gate)"]
+        I["🚀 MoroSystems Payments Sandbox<br/>(POST /api/v1/payments -> CERTIS/SEPA Instant)"]
     end
 
     A --> C
@@ -60,8 +64,9 @@ flowchart TD
     D --> E
     E --> F
     F --> G
+    C --> G
     G --> H
-    H --> I
+    H -->|Human Approval| I
 ```
 
 ---

@@ -27,3 +27,7 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+
+# Downloaded AWS Hackathon Shared Datasets
+sample_data/aws_shared/
+

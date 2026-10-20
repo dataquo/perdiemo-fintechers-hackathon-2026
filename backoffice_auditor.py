@@ -32,7 +32,11 @@ class BackOfficeAuditor:
             return {
                 "verdict": "REJECTED",
                 "risk_score": 100,
-                "findings": ["Calculation result contains no trip reports."]
+                "findings": [{
+                    "severity": "CRITICAL",
+                    "rule": "KB-RULE-00-CALC-EMPTY",
+                    "message": "Calculation result contains no trip reports."
+                }]
             }
 
         first_trip = trip_reports[0]
@@ -61,7 +65,13 @@ class BackOfficeAuditor:
             findings.append({
                 "severity": "PASSED",
                 "rule": "KB-RULE-01-MEAL-DOUBLE-DIPPING",
-                "message": "Complimentary hotel breakfast correctly declared and reduced from per diem allowance."
+                "message": "Complimentary hotel breakfast correctly declared and reduced from per diem allowance (§ 163 ZP)."
+            })
+        elif not breakfast_included:
+            findings.append({
+                "severity": "PASSED",
+                "rule": "KB-RULE-01-MEAL-DOUBLE-DIPPING",
+                "message": "Hotel accommodation confirmed room-only (no complimentary breakfast included). Full statutory per diem preserved with 0% meal deduction."
             })
 
         # Rule 2: Weekend / Holiday Travel Anomaly Check
@@ -111,15 +121,15 @@ class BackOfficeAuditor:
         if card_transactions:
             matched_count = 0
             for tx in card_transactions:
-                tx_date = tx.get("date")
-                tx_amount = tx.get("amount")
-                # Look for matching day
+                raw_ts = str(tx.get("timestamp") or tx.get("date") or "")
+                tx_date = raw_ts.split("T")[0] if "T" in raw_ts else raw_ts
+                # Check if transaction date falls on any day of the trip
                 if any(day.get("datum") == tx_date for day in denni_prehled):
                     matched_count += 1
             findings.append({
                 "severity": "INFO",
                 "rule": "KB-RULE-04-CARD-RECONCILIATION",
-                "message": f"Successfully cross-referenced {matched_count} of {len(card_transactions)} corporate card transactions with the active travel window."
+                "message": f"Successfully cross-referenced {matched_count} of {len(card_transactions)} corporate card transactions with the active travel window ({matched_count} matched travel dates)."
             })
 
         # Final Verdict
@@ -139,6 +149,117 @@ class BackOfficeAuditor:
                 "total_kraceni_czk": calculation_result.get("metadata", {}).get("total_kraceni_czk"),
                 "verification_signature": sig
             }
+        }
+
+    def reconcile_and_settle(
+        self,
+        intake_data: Dict[str, Any],
+        calculation_result: Dict[str, Any],
+        card_transactions: List[Dict[str, Any]],
+        out_of_pocket_expenses: Optional[List[Dict[str, Any]]] = None,
+        eur_czk_rate: float = 25.12
+    ) -> Dict[str, Any]:
+        """
+        Executes complete reconciliation of corporate card transactions against
+        statutory per diems and out-of-pocket cash expenses. Computes exact net
+        reimbursement payout for the MoroSystems payments sandbox API.
+        """
+        audit_res = self.audit_trip(intake_data, calculation_result, card_transactions)
+        meta = calculation_result.get("metadata", {})
+        statutory_per_diem = float(meta.get("total_stravne_czk", 0.0) or 0.0)
+        meal_deductions = float(meta.get("total_kraceni_czk", 0.0) or 0.0)
+
+        # Categorize card spend
+        company_travel_spend_czk = 0.0
+        personal_card_offset_czk = 0.0
+        non_travel_office_czk = 0.0
+        reconciled_items = []
+
+        for tx in card_transactions:
+            exp_type = tx.get("expense_type", "TRAVEL_OTHER")
+            amt = float(tx.get("amount", 0.0))
+            curr = tx.get("currency", "CZK")
+            amt_czk = float(tx.get("billing_amount_czk", amt if curr == "CZK" else amt * eur_czk_rate))
+
+            if exp_type == "PERSONAL_EXPENSE":
+                personal_card_offset_czk += amt_czk
+                reconciled_items.append({
+                    "transaction_id": tx.get("transaction_id"),
+                    "merchant": tx.get("merchant_name", tx.get("merchant_descriptor")),
+                    "amount_original": f"{amt:.2f} {curr}",
+                    "amount_czk": amt_czk,
+                    "category": "PERSONAL_OFFSET",
+                    "action": f"Deducted from employee reimbursement (-{amt_czk:.2f} CZK)"
+                })
+            elif exp_type == "OFFICE_SUPPLIES":
+                non_travel_office_czk += amt_czk
+                reconciled_items.append({
+                    "transaction_id": tx.get("transaction_id"),
+                    "merchant": tx.get("merchant_name", tx.get("merchant_descriptor")),
+                    "amount_original": f"{amt:.2f} {curr}",
+                    "amount_czk": amt_czk,
+                    "category": "OFFICE_EXPENSE",
+                    "action": "Excluded from trip per diem; routed to general accounts payable"
+                })
+            else:
+                company_travel_spend_czk += amt_czk
+                reconciled_items.append({
+                    "transaction_id": tx.get("transaction_id"),
+                    "merchant": tx.get("merchant_name", tx.get("merchant_descriptor")),
+                    "amount_original": f"{amt:.2f} {curr}",
+                    "amount_czk": amt_czk,
+                    "category": "COMPANY_CARD_TRAVEL",
+                    "action": "Covered directly by corporate credit card (no reimbursement needed)"
+                })
+
+        # Process out-of-pocket cash
+        out_of_pocket_czk = 0.0
+        oop_items = []
+        if out_of_pocket_expenses:
+            for oop in out_of_pocket_expenses:
+                amt = float(oop.get("amount", 0.0))
+                curr = oop.get("currency", "CZK")
+                amt_czk = amt if curr == "CZK" else round(amt * eur_czk_rate, 2)
+                out_of_pocket_czk += amt_czk
+                oop_items.append({
+                    "merchant": oop.get("merchant_name"),
+                    "amount_original": f"{amt:.2f} {curr}",
+                    "amount_czk": amt_czk,
+                    "action": f"Reimbursed to employee (+{amt_czk:.2f} CZK)"
+                })
+
+        # Net Settlement Formula
+        net_reimbursement_czk = max(0.0, round(statutory_per_diem + out_of_pocket_czk - personal_card_offset_czk, 2))
+
+        explanation_log = {
+            "statutory_per_diem_czk": statutory_per_diem,
+            "meal_deductions_czk": meal_deductions,
+            "out_of_pocket_czk": out_of_pocket_czk,
+            "personal_card_offset_czk": personal_card_offset_czk,
+            "company_card_travel_spend_czk": company_travel_spend_czk,
+            "net_payout_czk": net_reimbursement_czk,
+            "calculation_seal_sha256": meta.get("verification_signature"),
+            "cnb_rate_applied": f"1 EUR = {eur_czk_rate:.2f} CZK",
+            "items": reconciled_items,
+            "out_of_pocket_items": oop_items
+        }
+
+        return {
+            "verdict": audit_res["verdict"],
+            "risk_score": audit_res["risk_score"],
+            "findings": audit_res["findings"],
+            "net_settlement": {
+                "statutory_per_diem_czk": statutory_per_diem,
+                "out_of_pocket_czk": out_of_pocket_czk,
+                "personal_card_offset_czk": personal_card_offset_czk,
+                "company_paid_card_czk": company_travel_spend_czk,
+                "net_reimbursement_czk": net_reimbursement_czk,
+                "currency": "CZK",
+                "ready_for_payout": audit_res["verdict"] in ("APPROVED", "FLAGGED_FOR_REVIEW"),
+                "requires_human_approval": audit_res["risk_score"] > 0
+            },
+            "explanation_log": explanation_log,
+            "verification_signature": meta.get("verification_signature")
         }
 
 if __name__ == "__main__":

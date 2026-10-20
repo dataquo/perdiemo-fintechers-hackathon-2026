@@ -1,6 +1,6 @@
-# PerDiemo Copilot — Developer & AI Agent Operations Guide (v1.1.0)
+# PerDiemo Copilot — Developer & AI Agent Operations Guide (v1.1.2)
 
-> **Release Version:** `v1.1.0`  
+> **Release Version:** `v1.1.2`  
 > **Date:** October 19, 2026  
 > **Event:** The FinTechers Hackathon 2026 (Prague) — Track 06 (Back-Office AI) & Track 01  
 > **Target Audience:** Core Developers, AI Coding Assistants (Antigravity, Cursor, Kiro, Claude Code)
@@ -44,7 +44,7 @@ PerDiemo Copilot is an autonomous agentic system automating business travel expe
 
 ---
 
-## 2. Key Architectural Decisions (ADR v1.1.0)
+## 2. Key Architectural Decisions (ADR v1.1.2)
 
 ### Decision 1: AI Developer Tooling Strategy (Antigravity vs. Kiro vs. Bedrock)
 * **Finding:** AWS Kiro (kiro.dev) was evaluated as the primary IDE for the hackathon team. Investigation of the Hackathon IAM Identity Center (`https://d-c3676ff6eb.awsapps.com/start`) confirmed:
@@ -63,9 +63,17 @@ PerDiemo Copilot is an autonomous agentic system automating business travel expe
   - **Fallback / Batch LLM:** `eu.amazon.nova-2-lite-v1:0` or `qwen.qwen3-coder-30b-a3b-v1:0`
   - **Region:** `eu-central-1` (Frankfurt) for all computation, S3 storage, and Bedrock calls.
 
-### Decision 3: Deterministic Statutory Calculations
+### Decision 3: Two-Tier Deterministic Statutory Pipeline
 * **Rule:** LLMs must **NEVER** calculate statutory per diems, meal deductions (70%/35%/25%), or ČNB foreign exchange rates directly in prompt completions.
-* **Implementation:** All math must be delegated to `perdiemo_client.PerDiemoClient` which invokes the verified PerDiemo Cloud API (`/api/calculate`), yielding a legally defensible SHA-256 cryptographic seal compliant with Supreme Administrative Court ruling **NSS 3 Afs 97/2025 - 71**.
+* **Implementation:** All math is delegated to `perdiemo_client.PerDiemoClient` which invokes the verified PerDiemo Cloud API (`/api/calculate`), yielding a legally defensible SHA-256 cryptographic seal compliant with Supreme Administrative Court ruling **NSS 3 Afs 97/2025 - 71**.
+
+### Decision 4: Human-in-the-Loop Safe Agentic Payments
+* **Decision:** Autonomous calculations and proactive trip clusterings are gated behind a human authorization checkpoint prior to executing money movement on the MoroSystems Payments Sandbox.
+
+### Decision 5: Strict Non-Inference from Raw Bank Feeds
+* **Decision:** POS terminal descriptors (TSYS feeds) cannot prove complimentary hotel breakfast. Raw card spend defaults to room-only (0% meal reduction) to prevent unlawful deduction under § 163 ZP.
+
+*(For full ADR details and formal schemas, see [AGENTS.md](../AGENTS.md).)*
 
 ---
 
