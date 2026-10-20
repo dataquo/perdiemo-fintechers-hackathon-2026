@@ -33,7 +33,7 @@ The MCP server operates **independently** of matching: any caller may supply cor
 - **Optional for graphical demos:** Node.js/npm, for the official MCP Inspector.
 - **Optional for a conversational LLM demo:** an MCP-compatible AI application with its own model access (e.g. Claude Desktop). This server itself does not require AWS credentials or an LLM key to calculate allowances.
 
-### Install and run all offline acceptance tests
+### macOS / Linux — install and run all offline acceptance tests
 
 ```bash
 cd perdiemo-mcp
@@ -52,6 +52,32 @@ If your virtual environment is named `environment` rather than `.venv`, activate
 PASS: OFFLINE MOCK MCP discovery, status, validation, calculation and parse
 PASS: MCP tool discovery, input validation, local REST round-trip, parse confirmation
 ```
+
+### Windows 10/11 — install and run acceptance tests (PowerShell)
+
+Use **PowerShell** for the commands below (not Command Prompt); install **Python 3.12** and optionally Node.js 22+ for the graphical Inspector. Check Python with `py -3.12 --version`. If the Python Launcher (`py`) is not installed, use your Python 3.12 executable instead. Run these inside the extracted `perdiemo-mcp` folder, which contains `server.py` and `pyproject.toml`.
+
+```powershell
+cd "C:\path\to\perdiemo-mcp"
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+
+# Native Windows equivalent of run-acceptance.sh:
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe scripts_e2e_mock.py
+.\.venv\Scripts\python.exe scripts_e2e_local.py
+```
+
+Expected: **30 Python tests pass** and both local MCP protocol tests print `PASS`. No Render or cloud API request is made. `run-acceptance.sh` is a Unix shell script; on Windows **run the three Python commands above instead**. You do not need to activate the virtual environment because all commands explicitly use its Python interpreter. If you want activation, `.\.venv\Scripts\Activate.ps1` is optional, but may be blocked by your organization's PowerShell execution policy; do not change system-wide policy just to run these tests.
+
+To run the **optional production-API synthetic E2E** (separate from offline acceptance, and only when authorized):
+
+```powershell
+.\.venv\Scripts\python.exe scripts_e2e_live.py --confirm-production
+```
+
+This sends a synthetic request to the **actual** Render production endpoint, not a staging API. Never use personal/customer trip data.
 
 ## Start and switch the backend mode
 
@@ -82,6 +108,42 @@ python server.py
 ```
 
 The `.env.example` file is reference documentation; variables are **not automatically loaded**. Omitting mode/backend configuration causes safe `BACKEND_NOT_CONFIGURED` errors rather than a default production call.
+
+### Windows PowerShell — start Mock, Live, or Staging (no Bash required)
+
+The existing `start.sh` works on macOS/Linux. On **Windows**, run `server.py` directly with the equivalent environment variables. Open **PowerShell** in `perdiemo-mcp` and keep the window running. The HTTP MCP endpoint is `http://127.0.0.1:8001/mcp`. Before changing modes, press `Ctrl+C` and start again.
+
+**Offline Mock:**
+
+```powershell
+$env:PERDIEMO_MCP_TRANSPORT = "streamable-http"
+$env:PERDIEMO_API_MODE = "mock"
+Remove-Item Env:PERDIEMO_API_URL -ErrorAction SilentlyContinue
+Remove-Item Env:PERDIEMO_ALLOW_PRODUCTION -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe server.py
+```
+
+**Live Render API (synthetic demonstration data only, with permission):**
+
+```powershell
+$env:PERDIEMO_MCP_TRANSPORT = "streamable-http"
+$env:PERDIEMO_API_MODE = "live"
+$env:PERDIEMO_API_URL = "https://perdiemo-backend-production.onrender.com"
+$env:PERDIEMO_ALLOW_PRODUCTION = "true"
+.\.venv\Scripts\python.exe server.py
+```
+
+**Approved staging or locally hosted PerDiemo REST backend:**
+
+```powershell
+$env:PERDIEMO_MCP_TRANSPORT = "streamable-http"
+$env:PERDIEMO_API_MODE = "live"
+$env:PERDIEMO_API_URL = "http://127.0.0.1:8000"  # replace with your actual test REST URL
+Remove-Item Env:PERDIEMO_ALLOW_PRODUCTION -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe server.py
+```
+
+`PERDIEMO_API_MODE=live` with a *staging* URL means genuine REST requests to that chosen backend, not the Mock fixture. The `.env.example` file is **not auto-loaded**. PowerShell environment variables persist in the **current window** until changed/cleared; restart the terminal or explicitly switch modes to prevent accidental production calls.
 
 ### Repeat the verified one-shot live API test
 
@@ -170,6 +232,36 @@ In Inspector, choose **Add Server** if shown, then:
 
 Click **Connect**; open **Tools** and **List Tools** if necessary. The four tools above should appear.
 
+### Windows PowerShell — graphical Inspector demo
+
+The same Inspector UI works on Windows. Use **two PowerShell windows**:
+
+1. **Window A:** start `server.py` using the **Windows Mock or Live** instructions above. Leave it running.
+2. **Window B:** check Node.js/npm and launch Inspector:
+
+```powershell
+node --version
+npm.cmd --version
+npx.cmd -y @modelcontextprotocol/inspector
+```
+
+Open the **full** local Inspector URL printed in Window B (it may include an access token). Choose **Add Server → Streamable HTTP → `http://127.0.0.1:8001/mcp` → Connect → Tools**. Authentication is **None only for this loopback demo**. If PowerShell blocks `npx.ps1`, using `npx.cmd` as above avoids needing to change the execution policy.
+
+To copy the **complete tool arguments** as JSON on Windows (equivalent to macOS `pbcopy`):
+
+```powershell
+Get-Content -Raw -Encoding UTF8 .\examples\native_calculate.json | Set-Clipboard
+```
+
+Paste into **Edit as JSON for the entire `calculate_trip_allowance` tool arguments**. If the editor is specifically for the `trips` field (and expects a JSON array, not an object), copy only that field:
+
+```powershell
+$payload = Get-Content -Raw -Encoding UTF8 .\examples\native_calculate.json | ConvertFrom-Json
+$payload.trips | ConvertTo-Json -Depth 20 | Set-Clipboard
+```
+
+If you can discover tools but clicking **Execute** stays disabled, verify whether the editor expects the full `{ "year": ..., "trips": [...] }` object or just the `[...]` array. Do **not** try to run `calculate_trip_allowance` with an unconfirmed inferred trip. When finished, press `Ctrl+C` in both windows.
+
 ### 3. Present the demo (2–3 minutes)
 
 **A — Check connection.** Run `get_backend_status` without arguments. Confirm `mode: "live"` and `backend: "https://perdiemo-backend-production.onrender.com"`. In Mock mode, it will instead identify the offline fixture.
@@ -202,7 +294,7 @@ You should see a structured `calculation.metadata` response. In the owner's veri
 
 **Important distinction:** MCP Inspector calls tools manually. An MCP-compatible **AI host/client** is needed if you want an LLM to decide when to call `validate_trip_input` or `calculate_trip_allowance`. The MCP server itself is **not** an LLM, and it does **not** automatically switch PerDiemo's existing AI parser to AWS Bedrock.
 
-### Option A — Claude Desktop on the same Mac (stdio)
+### Option A — Claude Desktop on macOS (stdio)
 
 If Claude Desktop is installed and its version supports local MCP servers, open its MCP server configuration (on macOS, commonly `~/Library/Application Support/Claude/claude_desktop_config.json`). Add a server entry similar to the following, replacing **both absolute paths** with your own. Merge it into any existing `mcpServers` object; don't overwrite unrelated servers:
 
@@ -231,16 +323,43 @@ Ask the AI host something like:
 
 The LLM's responses and tool-use permissions depend on the host. The LLM may ask to approve tool calls. **No LLM API key needs to be injected into the PerDiemo MCP server** for these calculations; the AI host supplies its own model access.
 
+### Option A2 — Claude Desktop on Windows (stdio; optional LLM demo)
+
+On **Windows**, the Claude Desktop config is commonly located at `%APPDATA%\Claude\claude_desktop_config.json` (typically `C:\Users\YOUR_USER\AppData\Roaming\Claude\claude_desktop_config.json`). You can locate the directory from PowerShell:
+
+```powershell
+Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+```
+
+Merge this into the existing JSON config; **replace both paths** with the absolute paths to your Windows MCP project and its Python virtual environment. JSON requires doubled `\` in Windows file paths:
+
+```json
+{
+  "mcpServers": {
+    "perdiemo": {
+      "command": "C:\\Users\\YOUR_USER\\Projects\\perdiemo-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\Users\\YOUR_USER\\Projects\\perdiemo-mcp\\server.py"],
+      "env": {
+        "PERDIEMO_MCP_TRANSPORT": "stdio",
+        "PERDIEMO_API_MODE": "mock"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. This is a **Mock LLM tool-use rehearsal**; to use the real PerDiemo REST calculation, explicitly replace `"mock"` with `"live"` and add `"PERDIEMO_API_URL": "https://perdiemo-backend-production.onrender.com"` and `"PERDIEMO_ALLOW_PRODUCTION": "true"` in `env`, then restart again. Only send synthetic data. Claude Desktop launches the server itself in **stdio** mode; **do not** start the separate HTTP server for this connection. The AI app provides its own LLM access; no Bedrock or Claude key is needed inside this MCP server.
+
 ### Option B — An AI host with native Streamable HTTP MCP
 
-Start `./start.sh live`, then configure the AI host's custom MCP connector with:
+Start the MCP HTTP server in Live mode (`./start.sh live` on macOS/Linux; the **Windows PowerShell Live** command above on Windows), then configure the AI host's custom MCP connector with:
 
 ```text
 Transport: Streamable HTTP
 URL:       http://127.0.0.1:8001/mcp
 ```
 
-This works only if the **host itself runs on the same computer** or can reach that address. A cloud-hosted agent cannot reach your Mac's localhost. Remote deployments need an authenticated HTTPS MCP endpoint (e.g. managed platform or protected network). Clients that support only stdio may use their normal local subprocess configuration; `mcp-remote` is only a bridge for remote HTTP MCP endpoints, not a required package to build this Python MCP server.
+This works only if the **host itself runs on the same computer** or can reach that address. A cloud-hosted agent cannot reach your computer's localhost. Remote deployments need an authenticated HTTPS MCP endpoint (e.g. managed platform or protected network). Clients that support only stdio may use their normal local subprocess configuration; `mcp-remote` is only a bridge for remote HTTP MCP endpoints, not a required package to build this Python MCP server.
 
 ### Can the server itself call an LLM?
 
@@ -254,7 +373,7 @@ Before committing:
 
 1. Confirm the owner has granted access to the **correct private repository** and that your branch is based on current `main`.
 2. Exclude local virtual environments (`.venv/`, `environment/`), `.env`, session/auth tokens, and caches. Review `git status` and the staged diff before pushing.
-3. Run `./run-acceptance.sh`. Record the live E2E result separately: `python scripts_e2e_live.py --confirm-production` only when the owner approves hitting the existing production API with synthetic inputs.
+3. Run `./run-acceptance.sh` on macOS/Linux, or the three PowerShell Python tests in the Windows section. Record the live E2E result separately: `python scripts_e2e_live.py --confirm-production` only when the owner approves hitting the existing production API with synthetic inputs.
 4. Open a feature branch and PR rather than pushing straight to `main`, unless the owner explicitly requests otherwise.
 5. Include the MCP endpoint, transport, four Tool names, required trip schema, and instructions for testing in the PR description.
 
