@@ -315,6 +315,7 @@ with tab_upload:
                 traveler_name = None
                 trip_purpose = None
                 has_breakfast_receipt = False
+                any_hotel_has_breakfast = False
 
                 for i, uf in enumerate(uploaded_files):
                     status_text.text(f"Analyzing: {uf.name}")
@@ -343,6 +344,8 @@ with tab_upload:
 
                         if extraction.get("hotel_info", {}).get("hotel_name"):
                             hotel_data = extraction["hotel_info"]
+                            if extraction["hotel_info"].get("breakfast_included"):
+                                any_hotel_has_breakfast = True
 
                         if extraction.get("zamestnanec_jednatel") and not traveler_name:
                             traveler_name = extraction["zamestnanec_jednatel"]
@@ -350,13 +353,11 @@ with tab_upload:
                         if extraction.get("ucel_cesty") and not trip_purpose:
                             trip_purpose = extraction["ucel_cesty"]
 
-                        # Detect breakfast receipts (for fraud detection)
-                        doc_text = str(extraction).lower()
-                        filename_lower = uf.name.lower()
-                        if ("breakfast" in doc_text or "fruhstuck" in doc_text or
-                            "snidane" in doc_text or "breakfast" in filename_lower):
-                            if "hotel" not in filename_lower and not extraction.get("hotel_info", {}).get("hotel_name"):
-                                has_breakfast_receipt = True
+                        # AI-powered document classification for fraud detection
+                        doc_type = extraction.get("document_type", "")
+                        meal_info = extraction.get("meal_receipt", {})
+                        if doc_type == "meal_receipt" and meal_info.get("meal_type") == "breakfast":
+                            has_breakfast_receipt = True
 
                 progress_bar.empty()
                 status_text.empty()
@@ -480,6 +481,10 @@ with tab_upload:
                     <div class="step-title">Compliance Audit</div>
                 </div>
                 """, unsafe_allow_html=True)
+
+                # Ensure breakfast_included reflects ANY hotel with breakfast
+                if any_hotel_has_breakfast:
+                    hotel_data["breakfast_included"] = True
 
                 merged_data = {
                     "ucel_cesty": trip_purpose,

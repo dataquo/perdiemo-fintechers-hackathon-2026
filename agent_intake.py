@@ -48,10 +48,11 @@ AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 EXTRACTION_SYSTEM_PROMPT = """You are an expert corporate travel auditor and multimodal parser for Czech statutory per diem accounting.
-Your task is to analyze travel documents (flight boarding passes, train bookings, hotel folios, taxi receipts) or text logs, and extract a structured travel itinerary complying with statutory accounting rules.
+Your task is to analyze travel documents (flight boarding passes, train bookings, hotel folios, taxi receipts, meal receipts) or text logs, and extract a structured travel itinerary complying with statutory accounting rules.
 
 Return a strictly valid JSON object matching this schema:
 {
+  "document_type": "hotel_folio | boarding_pass | meal_receipt | taxi_receipt | train_ticket | other",
   "ucel_cesty": "string (business purpose, e.g. Client Negotiations)",
   "typ_vozidla": "string (SLUZEBNI for company car/flight/train, or OSOBNI for private vehicle)",
   "zamestnanec_jednatel": "string (traveler name if detected)",
@@ -73,8 +74,18 @@ Return a strictly valid JSON object matching this schema:
   "hotel_info": {
     "hotel_name": "string or null",
     "breakfast_included": true | false
+  },
+  "meal_receipt": {
+    "meal_type": "breakfast | lunch | dinner | null",
+    "date": "YYYY-MM-DD or null",
+    "amount": 0.0,
+    "currency": "EUR | CZK | etc"
   }
 }
+
+IMPORTANT: If this is a meal receipt (restaurant, cafe, etc.), set document_type to "meal_receipt" and fill in the meal_receipt object.
+Classify meal_type based on content: breakfast items (eggs, coffee, croissant, Frühstück), lunch, or dinner.
+
 Do not include any commentary, code fences, or explanations. Return ONLY the JSON object.
 """
 
