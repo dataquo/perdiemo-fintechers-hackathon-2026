@@ -2,16 +2,6 @@
 
 Synthetic travel expense documents for hackathon demonstration.
 
-## How These Were Created
-
-Generated programmatically using Python `reportlab` library to create realistic-looking PDFs that mimic real corporate travel documents.
-
-**Generator script:** `generate_demo_documents.py`
-
-```bash
-python generate_demo_documents.py
-```
-
 ## Documents
 
 | File | Type | Key Data Points |
@@ -21,32 +11,41 @@ python generate_demo_documents.py
 | `hotel_folio_grand_wien.pdf` | Hotel | Grand Hotel Wien, **breakfast included**, EUR 190.92 |
 | `taxi_receipt_airport.pdf` | Transport | Airport → Hotel, EUR 40.85 |
 | `restaurant_receipt_dinner.pdf` | Meal | Business dinner, EUR 126.50 |
+| `breakfast_receipt_fraud.pdf` | **FRAUD** | Breakfast receipt for same day hotel includes breakfast |
+| `hotel_weekend_suspicious.pdf` | **ANOMALY** | Weekend spa trip without business justification |
 
-## Demo Scenario
+## Demo Scenarios
 
-**Business Trip: Prague → Vienna (2 days)**
+### Scenario 1: Clean Trip (APPROVED)
 
-- Employee: Alex Miller
-- Company: Komerční banka client
-- Purpose: Client negotiations
-- Hotel: Grand Hotel Wien (breakfast included in rate)
+Upload only `hotel_folio_grand_wien.pdf`:
+- AI extracts breakfast included, declares it properly
+- **Result:** APPROVED (Risk 0/100)
 
-## Key Demo Point
+### Scenario 2: Fraud Detection (FLAGGED)
 
-The `hotel_folio_grand_wien.pdf` contains **"Complimentary Breakfast Buffet Included"**.
+Upload both:
+- `hotel_folio_grand_wien.pdf`
+- `breakfast_receipt_fraud.pdf`
 
-When processed:
-- AI extracts `breakfast_included: true`
-- If employee declares breakfast as free meal → **APPROVED**
-- If employee hides this (fraud simulation) → **FLAGGED** for meal double-dipping
+The hotel folio shows complimentary breakfast, but the employee also submits a separate breakfast receipt trying to get reimbursed twice.
 
-This demonstrates the KB compliance rule: **KB-RULE-01-MEAL-DOUBLE-DIPPING**
+**Result:** FLAGGED FOR REVIEW (Risk 45/100)
+**Rule:** KB-RULE-01-MEAL-DOUBLE-DIPPING
 
-## Regenerating Documents
+### Scenario 3: Weekend Anomaly (WARNING)
+
+Upload `hotel_weekend_suspicious.pdf`:
+- Saturday-Sunday stay at spa resort
+- No business justification
+- Expensive spa treatments + champagne
+
+**Result:** WARNING (KB-RULE-02-WEEKEND-TRAVEL-ANOMALY)
+
+## How These Were Created
+
+Generated using Python `reportlab` library:
 
 ```bash
-cd /path/to/perdiemo
-python generate_demo_documents.py
+python generate_fraud_document.py
 ```
-
-Documents are deterministic - same content each time.

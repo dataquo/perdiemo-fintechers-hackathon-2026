@@ -46,7 +46,21 @@ class BackOfficeAuditor:
         free_meals = intake_data.get("bezplatna_strava", {})
         has_breakfast_reduction = any("snidane" in meals for meals in free_meals.values())
 
-        if breakfast_included and not has_breakfast_reduction:
+        has_breakfast_receipt = intake_data.get("has_breakfast_receipt", False)
+
+        if breakfast_included and has_breakfast_receipt:
+            # FRAUD: Hotel includes breakfast but employee also submitted separate breakfast receipt
+            findings.append({
+                "severity": "CRITICAL",
+                "rule": "KB-RULE-01-MEAL-DOUBLE-DIPPING",
+                "message": (
+                    "FRAUD DETECTED: Hotel invoice shows complimentary breakfast included, "
+                    "but a separate breakfast receipt was also submitted for reimbursement. "
+                    "This is a clear double-dipping violation under Sections 163 and 170 of the Czech Labour Code."
+                )
+            })
+            risk_score += 45
+        elif breakfast_included and not has_breakfast_reduction:
             findings.append({
                 "severity": "CRITICAL",
                 "rule": "KB-RULE-01-MEAL-DOUBLE-DIPPING",

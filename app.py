@@ -319,6 +319,7 @@ with tab_upload:
                 hotel_data = {}
                 traveler_name = None
                 trip_purpose = None
+                has_breakfast_receipt = False
 
                 for i, uf in enumerate(uploaded_files):
                     status_text.text(f"Analyzing: {uf.name}")
@@ -353,6 +354,14 @@ with tab_upload:
 
                         if extraction.get("ucel_cesty") and not trip_purpose:
                             trip_purpose = extraction["ucel_cesty"]
+
+                        # Detect breakfast receipts (for fraud detection)
+                        doc_text = str(extraction).lower()
+                        filename_lower = uf.name.lower()
+                        if ("breakfast" in doc_text or "fruhstuck" in doc_text or
+                            "snidane" in doc_text or "breakfast" in filename_lower):
+                            if "hotel" not in filename_lower and not extraction.get("hotel_info", {}).get("hotel_name"):
+                                has_breakfast_receipt = True
 
                 progress_bar.empty()
                 status_text.empty()
@@ -425,6 +434,7 @@ with tab_upload:
                 </div>
                 """, unsafe_allow_html=True)
 
+                calc_result = {}
                 with st.spinner("Calling PerDiemo Statutory Engine..."):
                     try:
                         trip_payload = [{
@@ -484,7 +494,8 @@ with tab_upload:
                     "ucel_cesty": trip_purpose,
                     "hotel_info": hotel_data,
                     "bezplatna_strava": combined_meals,
-                    "itinerary": combined_itinerary
+                    "itinerary": combined_itinerary,
+                    "has_breakfast_receipt": has_breakfast_receipt
                 }
 
                 audit_result = auditor.audit_trip(merged_data, calc_result)
@@ -580,7 +591,31 @@ with tab_upload:
                 with col_btn1:
                     st.button("✅ Approve & Submit", type="primary", use_container_width=True)
                 with col_btn2:
-                    st.button("📤 Export Report", use_container_width=True)
+                    # Build export report
+                    export_report = {
+                        "report_generated": datetime.now().isoformat(),
+                        "verdict": verdict,
+                        "risk_score": risk_score,
+                        "calculations": {
+                            "per_diem_czk": meta.get("total_stravne_czk", 0),
+                            "meal_deductions_czk": meta.get("total_kraceni_czk", 0),
+                            "pocket_money_czk": meta.get("total_kapesne_czk", 0),
+                        },
+                        "compliance_findings": audit_result.get("findings", []),
+                        "cryptographic_seal": meta.get("verification_signature", ""),
+                        "documents_processed": len(extractions),
+                        "document_extractions": extractions,
+                        "trip_data": merged_data,
+                        "full_calculation": calc_result
+                    }
+                    report_json = json.dumps(export_report, indent=2, default=str)
+                    st.download_button(
+                        "📤 Export Report",
+                        data=report_json,
+                        file_name=f"perdiemo_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
 
         else:
             # Empty state
