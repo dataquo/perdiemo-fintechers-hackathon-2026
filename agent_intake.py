@@ -1080,6 +1080,162 @@ Provide an authoritative, clear, and mathematically accurate answer:
         last_question = formatted_messages[-1]["content"]
         return self.conversational_query(last_question, trip_context)
 
+    def explain_audit_rule(self, finding: Dict[str, Any], trip_context: Dict[str, Any]) -> str:
+        """
+        Asks Amazon Bedrock Claude Sonnet 4.5 to provide an in-depth statutory and operational
+        explanation of an audit rule finding, including concrete suggestions and remediation steps
+        if there is a violation or warning.
+        """
+        sev = str(finding.get("severity", "INFO")).upper()
+        rule = finding.get("rule", "KB-RULE")
+        msg = finding.get("message", "")
+
+        client = self._get_bedrock_client()
+        context_str = json.dumps(trip_context, indent=2, ensure_ascii=False)
+
+        prompt = f"""You are PerDiemo Copilot, an elite corporate tax compliance and payment operations AI agent specializing in Czech travel allowance law (§§ 151-189 ZP, Zákon č. 262/2006 Sb.) and Komerční banka corporate banking controls.
+
+Active Audit Finding to Explain:
+- Rule ID: {rule}
+- Severity: {sev} (PASSED, WARNING, CRITICAL, or INFO)
+- Engine Evaluation Message: {msg}
+
+Full Business Trip & Reconciliation Context:
+{context_str}
+
+Your Instructions:
+1. Explain clearly HOW this rule was evaluated against the traveler's active itinerary and corporate card transactions, and WHY it produced the verdict '{sev}'.
+2. Cite the exact statutory articles and legal precedents (e.g. § 163 ZP for meal reductions, § 170 ZP for foreign travel, § 156 ZP for travel purpose, NSS 3 Afs 97/2025 for evidentiary proof).
+3. IF THE RULE IS BROKEN OR HAS A WARNING ({sev} in ["CRITICAL", "WARNING"]):
+   - You MUST provide concrete, practical, step-by-step SUGGESTIONS and REMEDIATION actions for:
+     a) The Employee (e.g. what documentation or declaration to update).
+     b) The Corporate Accountant / CFO (e.g. what accounting adjustment or approval is required).
+4. IF THE RULE PASSED:
+   - Provide an audit defense note explaining why this calculation is tax-exempt and legally fortified against Finanční úřad audits.
+
+Format your response in structured Markdown with clean headings, bullet points, and high readability."""
+
+        if client:
+            try:
+                body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 1200,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.2
+                }
+                response = client.invoke_model(
+                    modelId=self.model_id,
+                    body=json.dumps(body)
+                )
+                response_body = json.loads(response["body"].read().decode("utf-8"))
+                return response_body["content"][0]["text"]
+            except Exception as e:
+                print(f"[WARN] Bedrock explain_audit_rule failed: {e}")
+
+        # Intelligent Fallback with Czech Labour Code citations & remediation suggestions
+        if "MEAL-DOUBLE-DIPPING" in rule or "RULE-01" in rule:
+            if sev == "CRITICAL":
+                return (
+                    "### ⚖️ Statutory Analysis: Meal Double-Dipping Violation\n\n"
+                    "**Why this was flagged:**\n"
+                    "The hotel booking or invoice indicates that breakfast was included in the corporate room charge, "
+                    "yet the statutory travel declaration (`bezplatna_strava`) did not declare a meal deduction (`snidane`).\n\n"
+                    "**Legal Grounding (§§ 163 & 170 ZP):**\n"
+                    "Under Section 163 of the Czech Labour Code, when an employer provides a free meal during a business trip, "
+                    "the statutory per diem allowance must be reduced by:\n"
+                    "- **70%** for trip legs lasting 5 to 12 hours\n"
+                    "- **35%** for trip legs lasting 12 to 18 hours\n"
+                    "- **25%** for trip legs lasting over 18 hours\n\n"
+                    "Claiming full statutory per diem while the company already paid for breakfast constitutes an unlawful double benefit "
+                    "subject to wage tax assessment and penalties under Supreme Administrative Court case law (*NSS 3 Afs 97/2025 - 71*).\n\n"
+                    "### 💡 Actionable Suggestions & Remediation:\n"
+                    "1. **Employee Action:** Update the trip expense claim to declare `snidane` for each morning with hotel breakfast. "
+                    "The PerDiemo engine will automatically deduct the statutory percentage.\n"
+                    "2. **Accountant Action:** If the hotel was in fact booked as *Room Only* despite the package label, attach the itemized "
+                    "hotel folio showing separate zero-charge breakfast was not consumed. This will clear the CRITICAL flag.\n"
+                    "3. **Re-seal Trip:** Click **'Re-Calculate'** to produce a new cryptographic SHA-256 seal before approving the MoroSystems payout."
+                )
+            else:
+                return (
+                    "### ⚖️ Statutory Analysis: Meal Allowance Compliance\n\n"
+                    "**Why this passed:**\n"
+                    f"{msg}\n\n"
+                    "**Legal Grounding (§§ 163 & 170 ZP):**\n"
+                    "The statutory meal deductions are fully aligned with declared meals. Because no complimentary breakfast was provided "
+                    "in the room charge (or declared breakfast was correctly deducted), the employee is entitled to 100% of the statutory "
+                    "per diem rate without risking double reimbursement sanctions in a tax audit."
+                )
+
+        elif "WEEKEND-TRAVEL" in rule or "RULE-02" in rule:
+            if sev == "WARNING":
+                return (
+                    "### ⚖️ Statutory Analysis: Weekend Travel Anomaly\n\n"
+                    "**Why this was flagged:**\n"
+                    "One or more travel legs occurred on a Saturday or Sunday, but the stated travel purpose (`ucel_cesty`) did not "
+                    "contain standard high-priority business justification keywords.\n\n"
+                    "**Legal Grounding (§ 156 ZP):**\n"
+                    "Weekend travel creates taxable fringe benefit suspicion during tax inspections (*Finanční správa*). The employer "
+                    "must prove that weekend travel was mandated by strict business necessity (e.g. Monday morning conference, emergency on-site repair).\n\n"
+                    "### 💡 Actionable Suggestions & Remediation:\n"
+                    "1. **Employee Action:** Update `ucel_cesty` with specific business justification (e.g., *'Emergency on-site client audit starting Monday 08:00'* or *'International trade fair setup'*).\n"
+                    "2. **Manager Action:** Attach an approved pre-travel authorization (*cestovní příkaz*) explicitly approving weekend transit.\n"
+                    "3. **Accountant Action:** Review the justification note; once documented, the accountant can approve the reimbursement without tax penalty."
+                )
+            else:
+                return (
+                    "### ⚖️ Statutory Analysis: Weekend Travel Justified\n\n"
+                    "**Why this passed:**\n"
+                    f"{msg}\n\n"
+                    "**Legal Grounding (§ 156 ZP):**\n"
+                    "All travel legs occurred on regular working days, or weekend legs were substantiated by valid business justification "
+                    "meeting Czech Labour Code and tax deductibility standards."
+                )
+
+        elif "AUDIT-FINGERPRINT" in rule or "RULE-03" in rule:
+            if sev == "CRITICAL":
+                return (
+                    "### ⚖️ Evidentiary Standard Analysis: Missing Audit Fingerprint\n\n"
+                    "**Why this was flagged:**\n"
+                    "The calculation result lacks a valid 64-character SHA-256 cryptographic verification signature.\n\n"
+                    "**Legal Grounding (NSS 3 Afs 97/2025 - 71):**\n"
+                    "In tax audits, the burden of proof (*důkazní břemeno*) rests squarely on the employer. Without a cryptographic timestamp "
+                    "and immutable calculation seal, tax inspectors may disregard the calculation and disallow corporate tax deductions.\n\n"
+                    "### 💡 Actionable Suggestions & Remediation:\n"
+                    "1. Re-run the calculation through the official PerDiemo Cloud Engine (`POST /api/calculate`) to generate the SHA-256 seal.\n"
+                    "2. Do not dispatch payments via MoroSystems until the verification signature is recorded."
+                )
+            else:
+                return (
+                    "### ⚖️ Evidentiary Standard Analysis: Cryptographic Seal Valid\n\n"
+                    "**Why this passed:**\n"
+                    f"{msg}\n\n"
+                    "**Legal Grounding (NSS 3 Afs 97/2025 - 71):**\n"
+                    "The calculation is cryptographically sealed with a SHA-256 hash incorporating the itinerary dates, statutory rates, and ČNB FX fixing. "
+                    "This satisfies the highest standard of evidentiary audit defence in Czech fiscal law."
+                )
+
+        elif "CARD-RECONCILIATION" in rule or "RULE-04" in rule:
+            return (
+                "### 💳 Open Banking Audit: Corporate Card Reconciliation\n\n"
+                "**Why this was evaluated:**\n"
+                f"{msg}\n\n"
+                "**Operational Grounding:**\n"
+                "Cross-referencing corporate card transaction timestamps with declared travel dates verifies the physical presence of the employee "
+                "at the destination and prevents fictitious expense claims.\n\n"
+                "### 💡 Actionable Suggestions:\n"
+                "- If any transactions fall outside the travel window, verify whether timezone adjustments or delayed merchant batch settlement (TSYS offline sync) occurred.\n"
+                "- Ensure personal convenience charges (e.g. supermarket snacks) remain categorized under `SETTLE-RULE-01-PERSONAL-CARD-OFFSET`."
+            )
+
+        else:
+            return (
+                f"### 🛡️ Rule Evaluation: {rule}\n\n"
+                f"**Status:** `{sev}`\n"
+                f"**Detail:** {msg}\n\n"
+                "**Statutory Context:**\n"
+                "Evaluated in accordance with Czech Labour Code §§ 151–189 ZP and Komerční banka corporate expense policies."
+            )
+
 
 if __name__ == "__main__":
     agent = BedrockIntakeAgent()

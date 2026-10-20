@@ -164,7 +164,57 @@ def get_services():
 
 client, agent, auditor, moro_client = get_services()
 
-def render_audit_finding(finding):
+@st.dialog("🤖 PerDiemo Copilot — AI Rule Advisory & Suggestions", width="large")
+def show_rule_explanation_dialog(finding: dict, trip_context: dict):
+    sev = str(finding.get("severity", "INFO")).upper()
+    rule = finding.get("rule", "KB-RULE")
+    msg = finding.get("message", "")
+
+    st.markdown(f"### 🛡️ `{rule}`")
+    render_audit_finding(finding, show_explain=False)
+
+    if sev in ["CRITICAL", "WARNING"]:
+        prompt_q = (
+            f"Explain how {rule} was evaluated for this trip, why it produced severity '{sev}', "
+            f"and what concrete suggestions and remediation steps should be taken to resolve the issue."
+        )
+    else:
+        prompt_q = (
+            f"Explain how {rule} was evaluated for this trip, why it produced severity '{sev}', "
+            f"and what statutory provisions confirm full compliance."
+        )
+
+    st.markdown(f"""
+        <div style="background: rgba(99, 102, 241, 0.08); padding: 0.8rem 1rem; border-radius: 8px; margin: 0.8rem 0; border-left: 4px solid #6366f1;">
+            <div style="font-size: 0.72rem; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.05em;">❓ Question Asked to AI Agent:</div>
+            <div style="font-size: 0.92rem; font-style: italic; margin-top: 4px; color: inherit;">"{prompt_q}"</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    with st.spinner("🤖 Bedrock Claude Sonnet 4.5 analyzing statutory rules & formulating advice..."):
+        ai_reply = agent.explain_audit_rule(finding, trip_context)
+
+    st.markdown("#### 🧠 Copilot Audit Assessment & Guidance")
+    st.markdown(ai_reply)
+
+    # Automatically save to chat thread so user can continue seamlessly in chat
+    if "chat_thread" not in st.session_state:
+        st.session_state["chat_thread"] = []
+
+    already_in_chat = any(m.get("content") == prompt_q for m in st.session_state["chat_thread"])
+    if not already_in_chat:
+        st.session_state["chat_thread"].append({"role": "user", "content": prompt_q})
+        st.session_state["chat_thread"].append({"role": "assistant", "content": ai_reply})
+
+    st.divider()
+    c_btn1, c_btn2 = st.columns([1.2, 0.8])
+    with c_btn1:
+        st.caption("💬 This explanation and advice has been saved to your **Conversational Copilot Chat** below.")
+    with c_btn2:
+        if st.button("✖️ Close Dialog", use_container_width=True, key=f"dlg_close_{rule}"):
+            st.rerun()
+
+def render_audit_finding(finding, idx=0, show_explain=True, trip_context=None, key_prefix="t1"):
     if isinstance(finding, str):
         finding = {"severity": "INFO", "rule": "KB-INFO", "message": finding}
     sev = str(finding.get("severity", "INFO")).upper()
@@ -184,14 +234,25 @@ def render_audit_finding(finding):
         cls = "finding-item-info"
         badge = '<span class="badge-info">INFO</span>'
 
-    st.markdown(f"""
+    card_html = f"""
         <div class="finding-item {cls}">
             <div style="flex-shrink: 0; margin-top: 1px;">{badge}</div>
             <div style="flex-grow: 1;">
                 <span class="rule-tag">{rule}</span> &nbsp;{msg}
             </div>
         </div>
-    """, unsafe_allow_html=True)
+    """
+
+    if show_explain:
+        col_card, col_btn = st.columns([4.2, 0.9])
+        with col_card:
+            st.markdown(card_html, unsafe_allow_html=True)
+        with col_btn:
+            st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+            if st.button("💡 Explain", key=f"btn_explain_{key_prefix}_{rule}_{idx}", use_container_width=True, help=f"Ask AI Agent to explain {rule} and suggest actions"):
+                show_rule_explanation_dialog(finding, trip_context or {})
+    else:
+        st.markdown(card_html, unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
@@ -394,9 +455,14 @@ with tab_card:
             """, unsafe_allow_html=True)
 
             # Audit findings
-            with st.expander("🔍 View Compliance Audit Findings & Cryptographic Seal", expanded=False):
-                for f in settlement.get("findings", []):
-                    render_audit_finding(f)
+            with st.expander("🔍 View Compliance Audit Findings & Cryptographic Seal", expanded=True):
+                trip_ctx = {
+                    "destination": dest_choice if "dest_choice" in locals() else "Vienna",
+                    "tsys_data": tsys_data,
+                    "card_settlement": st.session_state.get("card_settlement")
+                }
+                for idx, f in enumerate(settlement.get("findings", [])):
+                    render_audit_finding(f, idx=idx, show_explain=True, trip_context=trip_ctx, key_prefix="tab1")
                 sig = settlement.get("verification_signature")
                 if sig:
                     st.markdown('<div style="font-size: 0.78rem; font-weight: 700; color: #64748b; margin-top: 0.9rem; text-transform: uppercase;">🔒 Cryptographic Evidentiary Audit Seal (SHA-256):</div>', unsafe_allow_html=True)
@@ -554,8 +620,13 @@ with tab_doc:
             m3.metric("Pocket Money", f"{meta.get('total_kapesne_czk', 0):,.2f} CZK")
 
             st.markdown("#### 🔍 Compliance Audit Findings")
-            for finding in audit_report.get("findings", []):
-                render_audit_finding(finding)
+            doc_trip_ctx = {
+                "extracted_itinerary": extracted if "extracted" in locals() else {},
+                "audit_report": audit_report if "audit_report" in locals() else {},
+                "metadata": meta if "meta" in locals() else {}
+            }
+            for idx, finding in enumerate(audit_report.get("findings", [])):
+                render_audit_finding(finding, idx=idx, show_explain=True, trip_context=doc_trip_ctx, key_prefix="tab2")
 
             st.divider()
             st.markdown(f"**🔒 Cryptographic Audit Seal (SHA-256):**")
