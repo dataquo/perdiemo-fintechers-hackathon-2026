@@ -81,6 +81,7 @@ eu.anthropic.claude-sonnet-4-5-20250929-v1:0
 | KB-RULE-02 | Weekend travel without business justification | +25 WARNING |
 | KB-RULE-03 | Missing SHA-256 audit signature | +50 CRITICAL |
 | KB-RULE-04 | Corporate card transaction reconciliation | INFO |
+| KB-RULE-05 | 2-Way Invoice vs Card Cross-Reconciliation | +35 CRITICAL / WARNING |
 
 **Verdict thresholds:**
 - Risk < 40 → APPROVED
@@ -94,7 +95,8 @@ eu.anthropic.claude-sonnet-4-5-20250929-v1:0
 3. **Natural language input** - Describe trip in text, AI extracts itinerary
 4. **Fraud simulation toggle** - Demo the double-dipping detection
 5. **Synthetic demo documents** - Realistic PDFs for presentation
-6. **Polished Streamlit UI** - Professional demo-ready interface
+6. **2-Way Invoice vs Banking Reconciliation Engine (Tab 4)** - Automated cross-check of OCR invoices against TSYS corporate card streams with tip tolerance, out-of-pocket settlement, orphan card flagging, and 1-click manager remediation
+7. **Polished Streamlit UI** - 4-tab executive dashboard with Bedrock Sonnet 4.5 conversational payment ops and MoroSystems instant settlement sandbox
 
 ## Use Cases
 

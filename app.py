@@ -18,6 +18,7 @@ import agent_intake
 import backoffice_auditor
 import morosystems_client
 import document_package_auditor
+import invoice_matcher
 
 # Hot reload submodules to bust Streamlit process cache
 importlib.reload(perdiemo_client)
@@ -25,12 +26,14 @@ importlib.reload(agent_intake)
 importlib.reload(backoffice_auditor)
 importlib.reload(morosystems_client)
 importlib.reload(document_package_auditor)
+importlib.reload(invoice_matcher)
 
 from perdiemo_client import PerDiemoClient
 from agent_intake import BedrockIntakeAgent
 from backoffice_auditor import BackOfficeAuditor
 from morosystems_client import MoroSystemsPaymentClient
 from document_package_auditor import DocumentPackageAuditor
+from invoice_matcher import InvoiceTransactionMatcher
 
 # Streamlit Page Config
 st.set_page_config(
@@ -290,6 +293,20 @@ def apply_remediation(rule_id: str, remediation_type: str, key_prefix: str = "ta
         }
         st.session_state.pop("doc_payout_receipt", None)
 
+    elif key_prefix in ["tab4", "t4"]:
+        if remediation_type == "authorize_tip":
+            st.session_state["match_tip_approved"] = True
+            action_summary = "Manager authorized discretionary dining tip (+8.50 EUR) at Restaurant Opus as allowable business hospitality under corporate travel guidelines."
+        elif remediation_type == "request_receipt":
+            st.session_state["match_receipt_requested"] = True
+            action_summary = "Dispatched formal receipt request to employee Alex Miller for 42.00 EUR Heinemann Duty Free corporate card charge."
+        elif remediation_type == "manager_overrule":
+            st.session_state["match_tip_approved"] = True
+            st.session_state["match_receipt_requested"] = True
+            action_summary = "Line manager approved all invoice variances and authorized immediate reimbursement payout under administrative waiver."
+        else:
+            action_summary = "Manager authorization recorded."
+
     # Record in Copilot chat thread
     if "chat_thread" not in st.session_state:
         st.session_state["chat_thread"] = []
@@ -413,6 +430,40 @@ def show_rule_explanation_dialog(finding: dict, trip_context: dict, key_prefix: 
                 st.toast("🎉 Fresh SHA-256 seal generated!", icon="🔒")
                 st.rerun()
 
+        elif "INVOICE-TRANSACTION-MATCH" in rule or "RULE-05" in rule:
+            st.markdown("**Recommended Remediation:**")
+            st.caption("Review transaction variances and missing receipt controls under Section 151 of the Czech Labour Code (§ 151 ZP).")
+            c_m1, c_m2 = st.columns(2)
+            with c_m1:
+                st.markdown("**Option A (Authorize Dining Tip):**")
+                st.caption("Approve the +€8.50 terminal charge at Restaurant Opus as legitimate client entertainment.")
+                if st.button("⚡ Authorize Tip Variance (+€8.50)", type="primary", use_container_width=True, key=f"rem_tip_{rule}_{key_prefix}"):
+                    if dialog_key:
+                        st.session_state[dialog_key] = False
+                    st.session_state.pop(cache_key, None)
+                    apply_remediation(rule, "authorize_tip", key_prefix)
+                    st.toast("🎉 Dining tip authorized!", icon="⚡")
+                    st.rerun()
+            with c_m2:
+                st.markdown("**Option B (Request Missing Invoice):**")
+                st.caption("Dispatch formal email request to employee for €42.00 Heinemann Duty Free charge.")
+                if st.button("📧 Request Tax Invoice from Employee", use_container_width=True, key=f"rem_req_{rule}_{key_prefix}"):
+                    if dialog_key:
+                        st.session_state[dialog_key] = False
+                    st.session_state.pop(cache_key, None)
+                    apply_remediation(rule, "request_receipt", key_prefix)
+                    st.toast("📧 Notification dispatched to Alex Miller!", icon="📧")
+                    st.rerun()
+
+            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+            if st.button("👔 Approve All & Fast-Track Instant Payout", use_container_width=True, key=f"rem_all_{rule}_{key_prefix}"):
+                if dialog_key:
+                    st.session_state[dialog_key] = False
+                st.session_state.pop(cache_key, None)
+                apply_remediation(rule, "manager_overrule", key_prefix)
+                st.toast("🎉 Manager approval recorded for all items!", icon="👔")
+                st.rerun()
+
         else:
             st.markdown("**Recommended Remediation:**")
             st.caption("Authorize policy exception under approving line-manager authority.")
@@ -457,6 +508,11 @@ def show_rule_explanation_dialog(finding: dict, trip_context: dict, key_prefix: 
             if dialog_key:
                 st.session_state[dialog_key] = False
             st.rerun()
+
+def render_clean_html(html_str: str):
+    """Renders HTML in Streamlit stripping all leading whitespace to prevent Markdown code-block escaping."""
+    clean = "\n".join(line.strip() for line in html_str.strip().splitlines())
+    st.markdown(clean, unsafe_allow_html=True)
 
 def render_audit_finding(finding, idx=0, show_explain=True, trip_context=None, key_prefix="t1"):
     if isinstance(finding, str):
@@ -547,12 +603,13 @@ with st.sidebar:
     st.caption("• Supreme Admin Court: NSS 3 Afs 97/2025 - 71")
     st.caption("• ČNB Foreign Exchange Daily Fixing")
 
-    with st.expander("🛡️ KB Rules Quick Index (7 Rules)", expanded=False):
+    with st.expander("🛡️ KB Rules Quick Index (8 Rules)", expanded=False):
         st.markdown("""
         - <span class="badge-critical">CRIT</span> `KB-RULE-01-MEAL-DOUBLE-DIPPING`
         - <span class="badge-warning">WARN</span> `KB-RULE-02-WEEKEND-TRAVEL`
         - <span class="badge-critical">CRIT</span> `KB-RULE-03-AUDIT-FINGERPRINT`
         - <span class="badge-info">INFO</span> `KB-RULE-04-CARD-RECONCILIATION`
+        - <span class="badge-critical">CRIT</span> `KB-RULE-05-INVOICE-MATCHING`
         - <span class="badge-financial">FIN</span> `KB-FIN-STATUTORY-ALLOWANCE`
         - <span class="badge-financial">FIN</span> `KB-FIN-OUT-OF-POCKET-CASH`
         - <span class="badge-financial">FIN</span> `KB-FIN-PERSONAL-CARD-OFFSET`
@@ -563,10 +620,11 @@ st.markdown('<div class="main-header">💳 PerDiemo Copilot — Self-Reconciling
 st.markdown('<div class="sub-header">Feed corporate card streams, auto-cluster business trips, compute statutory Czech per diems, and disburse exact reimbursements via MoroSystems payments rails.</div>', unsafe_allow_html=True)
 
 # Main Navigation Tabs
-tab_card, tab_doc, tab_rules = st.tabs([
+tab_card, tab_doc, tab_rules, tab_matching = st.tabs([
     "💳 1. Proactive Corporate Card Auto-Reconciliation & Payout (Track 01)",
     "📄 2. Document & Receipt Compliance Audit (Track 06)",
-    "🛡️ 3. Komerční Banka Compliance & Audit Rules Matrix"
+    "🛡️ 3. Komerční Banka Compliance & Audit Rules Matrix",
+    "📑 4. Invoice Matching & Banking Reconciliation"
 ])
 
 # ==============================================================================
@@ -1471,8 +1529,308 @@ with tab_rules:
         {"Rule ID": "KB-RULE-02-WEEKEND-TRAVEL-ANOMALY", "Category": "Compliance", "Severity": "WARNING", "Risk Impact": "+25", "Legal Anchor": "§ 152 & § 156 ZP", "Action": "Audits weekend travel for commercial justification"},
         {"Rule ID": "KB-RULE-03-AUDIT-FINGERPRINT", "Category": "Compliance", "Severity": "CRITICAL", "Risk Impact": "+50", "Legal Anchor": "NSS 3 Afs 97/2025", "Action": "Requires 64-char SHA-256 calculation seal"},
         {"Rule ID": "KB-RULE-04-CARD-RECONCILIATION", "Category": "Compliance", "Severity": "INFO", "Risk Impact": "0", "Legal Anchor": "ISO 20022 / TSYS", "Action": "Cross-references card transactions with travel dates"},
+        {"Rule ID": "KB-RULE-05-INVOICE-TRANSACTION-MATCH", "Category": "Compliance", "Severity": "CRITICAL", "Risk Impact": "+45", "Legal Anchor": "§ 151 ZP / KB Audit", "Action": "Cross-checks invoices against corporate card swipes; flags missing receipts and variances"},
         {"Rule ID": "KB-FIN-STATUTORY-ALLOWANCE", "Category": "Financial", "Severity": "CREDIT", "Risk Impact": "N/A", "Legal Anchor": "§§ 163, 170, 183 ZP", "Action": "Calculates statutory per diem with ČNB daily FX"},
         {"Rule ID": "KB-FIN-OUT-OF-POCKET-CASH", "Category": "Financial", "Severity": "CREDIT", "Risk Impact": "N/A", "Legal Anchor": "Direct Reimburse", "Action": "Reimburses non-card personal cash expenses"},
         {"Rule ID": "KB-FIN-PERSONAL-CARD-OFFSET", "Category": "Financial", "Severity": "DEBIT", "Risk Impact": "N/A", "Legal Anchor": "Corporate Recovery", "Action": "Deducts personal card spend from net payout"}
     ]
     st.dataframe(pd.DataFrame(rules_data), use_container_width=True, hide_index=True)
+
+# ==============================================================================
+# TAB 4: Invoice Matching & Banking Reconciliation (Track 06 & Track 01 Bridge)
+# ==============================================================================
+with tab_matching:
+    st.markdown("### 📑 2-Way Invoice & Corporate Card Transaction Matching")
+    st.markdown(
+        '<div class="sub-header">Cross-checks parsed travel receipts & folios against corporate banking/card streams (TSYS Open Banking). '
+        'Identifies 100% matched company spend, POS tip variances, out-of-pocket cash claims, and unsubstantiated corporate card charges without tax invoices.</div>',
+        unsafe_allow_html=True
+    )
+
+    matcher = InvoiceTransactionMatcher(cnb_rate=25.12)
+    static_card_feed = matcher.load_static_transactions()
+
+    # Session states for resolutions
+    if "match_tip_approved" not in st.session_state:
+        st.session_state["match_tip_approved"] = False
+    if "match_receipt_requested" not in st.session_state:
+        st.session_state["match_receipt_requested"] = False
+
+    # Top Ingestion Columns
+    col_inv_src, col_card_src = st.columns([1, 1], gap="large")
+
+    with col_inv_src:
+        st.markdown("#### 📄 1. Submitted Expense Invoices & Folios")
+        inv_source_options = ["📁 Pre-bundled Demo Invoices (Vienna Business Trip: 4 Documents)"]
+        has_tab2_docs = bool(st.session_state.get("doc_audit_result", {}).get("file_extractions"))
+        if has_tab2_docs:
+            inv_source_options.append("📎 Invoices Uploaded in Tab 2 (Extracted Intelligence)")
+
+        selected_inv_src = st.selectbox("Select Invoice Package Source:", inv_source_options, index=0, key="match_inv_src")
+
+        if "Tab 2" in selected_inv_src:
+            extractions = st.session_state["doc_audit_result"]["file_extractions"]
+            invoices_to_match = matcher.build_invoices_from_extractions(extractions)
+            st.info(f"Loaded **{len(invoices_to_match)} document(s)** from Tab 2.")
+        else:
+            invoices_to_match = matcher.get_preset_invoices()
+            st.caption("ℹ️ *Pre-loaded verified receipts from `demo_documents/` (Grand Hotel Wien, Restaurant Opus, Taxi Vienna, Czech Airlines).*")
+
+        # Display Invoices Table
+        inv_df_rows = []
+        for inv in invoices_to_match:
+            inv_df_rows.append({
+                "Document": inv.get("document_file"),
+                "Vendor": inv.get("vendor_name"),
+                "Date": inv.get("invoice_date"),
+                "Amount": f"{inv.get('amount'):.2f} {inv.get('currency')}",
+                "Billing CZK": f"{inv.get('amount_czk'):,.2f} Kč",
+                "Claim Method": "🏢 Card" if inv.get("payment_claimed_as") == "COMPANY_CARD" else "💵 Cash OOP"
+            })
+        st.dataframe(pd.DataFrame(inv_df_rows), use_container_width=True, height=200, hide_index=True)
+
+    with col_card_src:
+        st.markdown("#### 💳 2. Corporate Banking Transaction Stream (TSYS)")
+        st.caption(
+            f"Employee: **{static_card_feed.get('cardholder', 'Alex Miller')}** | "
+            f"Account: `{static_card_feed.get('account_id')}` | "
+            f"FX Rate: `1 EUR = {static_card_feed.get('currency_fixing_rate', 25.12)} CZK`"
+        )
+        card_df_rows = []
+        for tx in static_card_feed.get("transactions", []):
+            card_df_rows.append({
+                "TX ID": tx.get("transaction_id"),
+                "Timestamp": tx.get("timestamp", "").replace("T", " "),
+                "Merchant Descriptor": tx.get("merchant_descriptor"),
+                "Amount": f"{tx.get('amount'):.2f} {tx.get('currency')}",
+                "Amount CZK": f"{tx.get('billing_amount_czk'):,.2f} Kč",
+                "Type": tx.get("expense_type")
+            })
+        st.dataframe(pd.DataFrame(card_df_rows), use_container_width=True, height=200, hide_index=True)
+
+    # Session state for matching executed
+    if "matching_executed" not in st.session_state:
+        st.session_state["matching_executed"] = False
+
+    # Reconciliation Execution Button
+    recon_col1, recon_col2 = st.columns([2, 1])
+    with recon_col1:
+        run_matching = st.button("🤖 Run Automated 2-Way Invoice vs Card Cross-Reconciliation", type="primary", use_container_width=True, key="btn_run_matching")
+    with recon_col2:
+        if st.button("🔄 Reset Reconciliation Scenarios", use_container_width=True, key="btn_reset_match"):
+            st.session_state["matching_executed"] = False
+            st.session_state["match_tip_approved"] = False
+            st.session_state["match_receipt_requested"] = False
+            st.session_state.pop("match_payout_receipt", None)
+            st.rerun()
+
+    match_report = None
+    if run_matching or st.session_state.get("matching_executed"):
+        if run_matching:
+            with st.spinner("🤖 Cross-matching submitted invoices against TSYS corporate card stream & auditing § 151 ZP compliance..."):
+                time.sleep(0.5)
+                st.session_state["matching_executed"] = True
+                st.toast("✅ Cross-Reconciled invoices against corporate card feed!", icon="🎯")
+
+        match_report = matcher.reconcile(invoices=invoices_to_match, card_feed=static_card_feed)
+
+    if not st.session_state.get("matching_executed") or match_report is None:
+        await_markup = """
+        <div style="background: #f8fafc; border: 2px dashed #94a3b8; border-radius: 10px; padding: 2rem; text-align: center; margin-top: 1.5rem;">
+            <div style="font-size: 1.6rem; margin-bottom: 0.5rem;">🔍 <strong>Awaiting Live Cross-Reconciliation</strong></div>
+            <div style="color: #475569; font-size: 0.95rem; max-width: 600px; margin: 0 auto 1.2rem auto;">
+                Click <strong>"🤖 Run Automated 2-Way Invoice vs Card Cross-Reconciliation"</strong> above to compare all submitted invoices against the corporate card feed on the spot for hackathon demonstration.
+            </div>
+            <div style="display: inline-flex; gap: 0.8rem; font-size: 0.85rem; color: #64748b;">
+                <span>• 4 Invoices Pending</span>
+                <span>• 5 Card Transactions</span>
+                <span>• § 151 ZP Statutory Controls</span>
+            </div>
+        </div>
+        """
+        render_clean_html(await_markup)
+    else:
+        # Apply interactive resolution overrides if toggled
+        if st.session_state["match_tip_approved"]:
+            for item in match_report["results"]:
+                if item["match_status"] == "AMOUNT_DISCREPANCY":
+                    item["accounting_direction"] = "APPROVED_TIP"
+                    item["explanation"] += " [APPROVED: Manager authorized discretionary tip of €8.50 as legitimate business hospitality.]"
+            match_report["findings"] = [f for f in match_report["findings"] if f["severity"] != "WARNING"]
+            match_report["findings"].append({
+                "severity": "PASSED",
+                "rule": "KB-RULE-05-INVOICE-TRANSACTION-MATCH",
+                "message": "Discretionary tip variance (+8.50 EUR) manually authorized by back-office manager."
+            })
+
+        if st.session_state["match_receipt_requested"]:
+            for item in match_report["results"]:
+                if item["match_status"] == "ORPHAN_CARD_TRANSACTION":
+                    item["explanation"] += " [NOTICE SENT: Automated email dispatched requesting tax invoice for Duty Free purchase.]"
+
+        metrics = match_report["metrics"]
+
+        # Metrics Bar
+        st.markdown("---")
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
+        m1.metric("Invoices Audited", f"{metrics['total_invoices_checked']} Docs", "100% Ingested")
+        m2.metric("Company-Paid (Card)", f"{metrics['company_paid_czk']:,.2f} Kč", "Exact Match")
+        m3.metric("Terminal Tip Variance", f"+{metrics['discrepancy_czk']:,.2f} Kč", "Tip / Discrepancy", delta_color="inverse")
+        m4.metric("Out-of-Pocket Cash", f"+{metrics['out_of_pocket_czk']:,.2f} Kč", "Payable to Alex")
+        m5.metric("Missing Tax Invoices", f"{metrics['unsubstantiated_card_czk']:,.2f} Kč", "Pending Receipt", delta_color="inverse")
+        m6.metric("Personal Card Offset", f"-{metrics['personal_offset_czk']:,.2f} Kč", "Salary Offset")
+
+        # Verdict & Compliance Findings
+        st.markdown("#### 🛡️ Compliance Verdict & Audit Findings")
+        eff_risk = match_report["risk_score"]
+        if st.session_state["match_tip_approved"]:
+            eff_risk = max(0, eff_risk - 25)
+        if st.session_state["match_receipt_requested"]:
+            eff_risk = max(0, eff_risk - 20)
+
+        if eff_risk == 0:
+            st.success("✅ AUDIT VERDICT: **APPROVED FOR AUTOMATED DISBURSEMENT** (Risk Score: 0/100)")
+        else:
+            st.warning(f"⚠️ AUDIT VERDICT: **FLAGGED FOR ACCOUNTANT REVIEW** (Risk Score: {eff_risk}/100)")
+
+        # Prepare context for AI Explanation Dialog (Bedrock Claude Sonnet 4.5)
+        trip_context_t4 = {
+            "destination": "Vienna",
+            "invoices": invoices_to_match,
+            "metrics": metrics,
+            "results": match_report["results"]
+        }
+
+        # Render each finding WITH show_explain=True
+        for idx, f in enumerate(match_report["findings"]):
+            render_audit_finding(f, idx=idx, show_explain=True, trip_context=trip_context_t4, key_prefix="t4")
+
+        # Interactive 2-Way Match Matrix Table
+        st.markdown("---")
+        with st.expander("🔍 View Itemized 2-Way Invoice vs Corporate Card Match Matrix", expanded=True):
+            st.caption("Side-by-side reconciliation of each invoice line item against the corresponding bank transaction.")
+
+            for item in match_report["results"]:
+                status = item["match_status"]
+                if status == "EXACT_MATCH":
+                    badge_html = '<span class="badge-passed">✅ EXACT MATCH (100%)</span>'
+                    border_color = "#22c55e"
+                    bg_color = "rgba(34, 197, 94, 0.05)"
+                elif status == "AMOUNT_DISCREPANCY":
+                    if st.session_state["match_tip_approved"]:
+                        badge_html = '<span class="badge-passed">✅ TIP APPROVED (+8.50 €)</span>'
+                        border_color = "#22c55e"
+                        bg_color = "rgba(34, 197, 94, 0.05)"
+                    else:
+                        badge_html = f'<span class="badge-warning">⚠️ DISCREPANCY (+{item["variance_amount"]:.2f} {item["variance_currency"]})</span>'
+                        border_color = "#eab308"
+                        bg_color = "rgba(234, 179, 8, 0.06)"
+                elif status == "ORPHAN_INVOICE":
+                    badge_html = '<span class="badge-info">💵 OUT-OF-POCKET CASH</span>'
+                    border_color = "#3b82f6"
+                    bg_color = "rgba(59, 130, 246, 0.05)"
+                elif status == "ORPHAN_CARD_TRANSACTION":
+                    badge_html = '<span class="badge-critical">🚨 MISSING TAX INVOICE</span>'
+                    border_color = "#ef4444"
+                    bg_color = "rgba(239, 68, 68, 0.06)"
+                else: # PERSONAL_CHARGE_OFFSET
+                    badge_html = '<span class="badge-financial">🟣 PERSONAL CARD OFFSET</span>'
+                    border_color = "#8b5cf6"
+                    bg_color = "rgba(139, 92, 246, 0.05)"
+
+                inv_col = (
+                    f"File: <code>{item['invoice_title']}</code><br/>"
+                    f"Amount: <strong>{item['invoice_amount']:.2f} {item['invoice_currency']}</strong> ({item['invoice_amount_czk']:,.2f} Kč)<br/>"
+                    f"Invoice Date: {item['invoice_date']}"
+                    if item.get("invoice_title") else
+                    "<span style='color: #dc2626;'>❌ No invoice attached to card spend</span>"
+                )
+
+                card_col = (
+                    f"TX: <code>{item['card_tx_id']}</code> — {item['card_merchant']}<br/>"
+                    f"Billed: <strong>{item['card_amount']:.2f} {item['card_currency']}</strong> ({item['card_amount_czk']:,.2f} Kč)<br/>"
+                    f"Swipe Date: {item['card_date']}"
+                    if item.get("card_tx_id") else
+                    "<span style='color: #2563eb;'>ℹ️ No corporate card swipe (paid cash)</span>"
+                )
+
+                card_markup = f"""
+                <div style="border: 1px solid {border_color}; background-color: {bg_color}; border-left: 6px solid {border_color}; border-radius: 8px; padding: 0.9rem 1.1rem; margin-bottom: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div style="font-weight: 700; font-size: 1.0rem; color: #1e293b;">
+                            {item.get('invoice_vendor') or item.get('card_merchant')}
+                        </div>
+                        <div>{badge_html}</div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; font-size: 0.88rem; color: #334155;">
+                        <div>
+                            <strong>📄 Uploaded Invoice:</strong><br/>
+                            {inv_col}
+                        </div>
+                        <div>
+                            <strong>💳 Corporate Card Transaction:</strong><br/>
+                            {card_col}
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px dashed #cbd5e1; font-size: 0.82rem; color: #475569;">
+                        ⚖️ <em>{item['explanation']}</em>
+                    </div>
+                </div>
+                """
+                render_clean_html(card_markup)
+
+        # Net Settlement & Manager Actions
+        st.markdown("---")
+        st.markdown("#### 💰 Net Settlement & Disbursement Workflow")
+
+        net_payable_czk = metrics["net_cash_reimbursement_impact_czk"]
+
+        col_set1, col_set2 = st.columns([1, 1], gap="large")
+
+        with col_set1:
+            settle_markup = f"""
+            <div class="settlement-card">
+                <div style="font-size: 1.15rem; font-weight: 800; color: #166534; margin-bottom: 0.5rem;">
+                    💶 Net Cash Reimbursement to Alex Miller: {net_payable_czk:,.2f} CZK
+                </div>
+                <div style="font-size: 0.88rem; color: #334155; line-height: 1.6;">
+                    • <strong>Company-Paid Card Spend:</strong> {metrics['company_paid_czk']:,.2f} CZK (Settled directly by KB corporate card)<br/>
+                    • <strong>Out-of-Pocket Cash Addition:</strong> +{metrics['out_of_pocket_czk']:,.2f} CZK (§ 151 ZP Airport Taxi)<br/>
+                    • <strong>Personal Card Spend Offset:</strong> -{metrics['personal_offset_czk']:,.2f} CZK (Billa Snack Recovery)<br/>
+                    • <strong>Unsubstantiated Card Hold:</strong> {metrics['unsubstantiated_card_czk']:,.2f} CZK (Duty Free — audit hold)
+                </div>
+            </div>
+            """
+            render_clean_html(settle_markup)
+
+        with col_set2:
+            st.markdown("##### 👔 Instant Payout Rail Execution")
+            st.caption("Disburse net out-of-pocket cash reimbursement directly via MoroSystems CERTIS instant clearing.")
+            payout_btn_label = f"💸 Authorize Net Cash Payout ({net_payable_czk:,.2f} CZK via MoroSystems Rail)"
+            if st.button(payout_btn_label, type="primary", use_container_width=True, key="btn_match_payout"):
+                with st.spinner("Executing net cash reimbursement via MoroSystems payments sandbox..."):
+                    payout_resp = moro_client.execute_payout(
+                        recipient_name="Alex Miller",
+                        recipient_iban="CZ6501000000001928374650",
+                        amount=net_payable_czk,
+                        currency="CZK",
+                        traveler_id="EMP-KB-0042",
+                        trip_reference="Vienna 2-Way Invoice Reconciliation Settlement",
+                        explanation_log={
+                            "company_paid_card_czk": metrics["company_paid_czk"],
+                            "out_of_pocket_cash_czk": metrics["out_of_pocket_czk"],
+                            "personal_card_offset_czk": metrics["personal_offset_czk"],
+                            "net_payout_czk": net_payable_czk
+                        },
+                        audit_seal="SHA256-INVOICE-CARD-2WAY-MATCH-VERIFIED"
+                    )
+                    st.session_state["match_payout_receipt"] = payout_resp
+
+        if "match_payout_receipt" in st.session_state:
+            rc = st.session_state["match_payout_receipt"]
+            st.success(f"🎉 **PAYMENT ORDER DISPATCHED!** {rc.get('message')}")
+            p_c1, p_c2 = st.columns(2)
+            p_c1.markdown(f"**Payment ID:** `{rc.get('payment_id')}` | **Clearing:** `{rc.get('clearing_system')}`")
+            p_c2.markdown(f"**Verification Hash:** `{str(rc.get('transfer_verification_hash', ''))[:24]}...`")
+
+

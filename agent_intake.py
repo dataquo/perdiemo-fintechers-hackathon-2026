@@ -1452,6 +1452,42 @@ Format your response in structured Markdown with clean headings, bullet points, 
                 "- Ensure personal convenience charges (e.g. supermarket snacks) remain categorized under `SETTLE-RULE-01-PERSONAL-CARD-OFFSET`."
             )
 
+        elif "INVOICE-TRANSACTION-MATCH" in rule or "RULE-05" in rule:
+            if sev == "CRITICAL":
+                return (
+                    "### 🚨 Audit Exception: Unsubstantiated Corporate Card Spend\n\n"
+                    "**Why this was flagged:**\n"
+                    f"{msg}\n\n"
+                    "**Legal Grounding (§ 151 ZP & Czech Accounting Act No. 563/1991 Coll.):**\n"
+                    "Corporate credit card charges made on behalf of the employer require an authentic tax document (*daňový doklad* / receipt). "
+                    "Charges without itemized receipts cannot be claimed as tax-deductible travel expenses and represent unverified company cash outflow.\n\n"
+                    "### 💡 Recommended Actions:\n"
+                    "1. **Employee Action:** Upload missing receipt for the card charge (e.g. Heinemann Duty Free).\n"
+                    "2. **Accountant Action:** Withhold travel reimbursement or reclassify the charge as an employee receivable until the invoice is attached.\n"
+                    "3. **Manager Override:** In the dialog below, click **'📧 Request Tax Invoice from Employee'** or **'👔 Approve All'**."
+                )
+            elif sev == "WARNING":
+                return (
+                    "### ⚠️ Compliance Warning: Invoice Amount Discrepancy (POS Tip / Gratuity)\n\n"
+                    "**Why this was flagged:**\n"
+                    f"{msg}\n\n"
+                    "**Legal & Accounting Grounding:**\n"
+                    "When corporate card POS charges exceed the printed restaurant receipt (e.g. +€8.50 at Restaurant Opus), "
+                    "the excess variance represents a voluntary gratuity or terminal surcharge. Corporate travel policy permits reasonable hospitality gratuity up to 10% "
+                    "with explicit line manager confirmation.\n\n"
+                    "### 💡 Recommended Actions:\n"
+                    "1. Click **'⚡ Authorize Tip Variance (+€8.50)'** below to approve as business entertaining.\n"
+                    "2. The variance will be recognized as legitimate hospitality spend and the warning cleared."
+                )
+            else:
+                return (
+                    "### ✅ 2-Way Invoice Reconciliation: Fully Verified\n\n"
+                    "**Why this passed:**\n"
+                    f"{msg}\n\n"
+                    "**Audit Fortification:**\n"
+                    "100% concordance between vendor tax invoice amount and bank settlement record confirms zero discrepancy and full corporate card coverage."
+                )
+
         else:
             return (
                 f"### 🛡️ Rule Evaluation: {rule}\n\n"

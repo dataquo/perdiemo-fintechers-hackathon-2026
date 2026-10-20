@@ -1,6 +1,6 @@
-# PerDiemo Copilot — Developer & AI Agent Operations Guide (v1.1.15)
+# PerDiemo Copilot — Developer & AI Agent Operations Guide (v1.4.0)
 
-> **Release Version:** `v1.1.15`  
+> **Release Version:** `v1.4.0`  
 > **Date:** October 20, 2026  
 > **Event:** The FinTechers Hackathon 2026 (Prague) — Track 06 (Back-Office AI) & Track 01  
 > **Target Audience:** Core Developers, AI Coding Assistants (Antigravity, Cursor, Kiro, Claude Code)
@@ -25,7 +25,7 @@ PerDiemo Copilot is an autonomous agentic system automating business travel expe
 |                                                                                                    |
 |   +----------------------+        +------------------------+        +--------------------------+   |
 |   |   Streamlit Front    |  --->  |    agent_intake.py     |  --->  |     Amazon Bedrock       |   |
-|   |       (app.py)       |        | (Multimodal Extractor) |        | (eu-central-1 Frankfurt) |   |
+|   |   (4-Tab Dashboard)  |        | (Multimodal Extractor) |        | (eu-central-1 Frankfurt) |   |
 |   +----------------------+        +-----------+------------+        | Claude Sonnet 4.5        |   |
 |                                               |                     +--------------------------+   |
 |                                               v                                                    |
@@ -38,7 +38,13 @@ PerDiemo Copilot is an autonomous agentic system automating business travel expe
 |   +--------------------------+    +------------------------+                                       |
 |   | document_package_auditor | -> |  backoffice_auditor.py |  <---  TSYS / KB Card Feeds           |
 |   | (Completeness & Checks)  |    | (Fraud & Anomaly Rules)|        (Double-dipping, Weekend trips)|
-|   +--------------------------+    +------------------------+                                       |
+|   +--------------------------+    +-----------+------------+                                       |
+|                                               |                                                    |
+|                                               v                                                    |
+|                                   +------------------------+                                       |
+|                                   |   invoice_matcher.py   |  <---  sample_data/invoice_matching...|
+|                                   | (2-Way Cross-Matching) |        (Matches, Tips, OOP, Orphans)  |
+|                                   +------------------------+                                       |
 +----------------------------------------------------------------------------------------------------+
 ```
 

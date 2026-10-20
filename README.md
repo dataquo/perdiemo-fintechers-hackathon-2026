@@ -4,7 +4,7 @@
 > 🎯 **Track 01:** Agentic Payments & Money Movement (*Challenge: The Self-Reconciling Merchant / Conversational Payment Ops*)  
 > 🛡️ **Track 06:** Finance Operations & Back-Office AI (*Partner Challenge: Automating Back-Office Document Controls — Komerční banka*)
 
-[![Version](https://img.shields.io/badge/Release-v1.1.15-blue?style=flat-square)](AGENTS.md)
+[![Version](https://img.shields.io/badge/Release-v1.4.0-blue?style=flat-square)](AGENTS.md)
 [![API Live](https://img.shields.io/badge/PerDiemo%20API-Online%20v1.0-10b981?style=flat-square)](https://perdiemo-backend-production.onrender.com)
 [![Bedrock](https://img.shields.io/badge/AWS%20Bedrock-Claude%20Sonnet%204.5-f59e0b?style=flat-square)](https://aws.amazon.com/bedrock/)
 [![Payments](https://img.shields.io/badge/MoroSystems-Payments%20Sandbox-8b5cf6?style=flat-square)](https://tsys-api.morosystems.cloud)
@@ -20,15 +20,56 @@ Corporate travel expense reporting (*vyúčtování pracovních cest*) is notori
 2. **Audit Exposure (NSS 3 Afs 97/2025 - 71):** In tax audits, the burden of proof is on the employer to prove trip facticity and exact statutory calculations. Without cryptographic evidence, companies face heavy penalties.
 3. **Delayed Reimbursement:** Employees wait weeks for payroll to process out-of-pocket cash expenses and statutory per diems.
 
-### The Solution: PerDiemo Copilot (v1.1.15)
+### The Solution: PerDiemo Copilot (v1.4.0)
 An autonomous agentic loop connecting **corporate credit cards (TSYS Sandbox)** and **multi-modal travel documents** to the **PerDiemo Statutory Engine** and **MoroSystems Payments Sandbox**:
 - **Proactive Card Ingestion & Clustering:** Agent monitors corporate card streams, identifies foreign travel charges (ÖBB, Grand Hotel Wien, Uber, Shell), and clusters them into trips.
 - **Multi-Modal Document Intake & OCR:** Ingests boarding passes, hotel folios, and meal receipts via Bedrock Claude Sonnet 4.5 vision and pure-Python PDF extraction (`pypdf`), classifying document types and verifying package completeness.
 - **Automated Fraud & Anomaly Detection:** Detects meal double-dipping fraud under §§ 163 & 170 ZP (e.g. hotel with breakfast + separate breakfast receipt) and weekend travel anomalies under § 156 ZP.
+- **2-Way Invoice vs. Banking Stream Matching (v1.4.0):** Autonomous cross-checking between verified invoices and bank settlement streams, identifying exact matches, POS tip variances, cash claims, and unsubstantiated card spend.
 - **Automated Statutory Calculation:** Computes legally binding Czech per diems (§§ 151–189 ZP), meal reductions (70%/35%/25%), and ČNB currency fixings sealed with a **tamper-proof SHA-256 signature**.
 - **Net Reconciliation Engine:** Offsets personal expenses on company cards (e.g. Billa grocery snack), reimburses out-of-pocket cash (taxi), and calculates exact net dues.
 - **Safe Agentic Money Movement:** Executes the net reimbursement payout into the employee's IBAN via **MoroSystems Payments API** with human-in-the-loop confirmation.
 - **Conversational Payment Ops & 1-Click Remediation:** Instant natural-language explanations citing exact transactions, statutory articles, and one-click accountant remediation buttons.
+
+---
+
+## 🚀 Built During the Hackathon
+
+In strict compliance with **The FinTechers Hackathon Transparency Rules** (judges evaluate only work committed after the `hackathon-start` marker):
+
+### 1. Pre-Existing Foundation (Disclosed Prior to Kickoff)
+- **PerDiemo Cloud Backend Engine:** Core cloud calculation microservice for statutory Czech Labour Code (§§ 151–189 ZP) per diems and daily ČNB currency fixings.
+- **Kickoff Marker:** Git tag `hackathon-start` (commit `c7da3ab`).
+
+### 2. Built from Scratch During the Hackathon (Evaluated by Jury)
+- 🤖 **Multimodal Bedrock OCR & Document Intake (`agent_intake.py`):**
+  - AWS Bedrock Claude Sonnet 4.5 vision & extraction pipeline in Frankfurt (`eu-central-1`) using cross-region inference profile `eu.anthropic.claude-sonnet-4-5-20250929-v1:0`.
+  - Multi-file drag-and-drop parsing for boarding passes, hotel folios, taxi receipts, and restaurant bills with pure-Python PDF fallback (`pypdf`, zero external binary dependencies).
+- 📦 **Document Package Auditor (`document_package_auditor.py`):**
+  - Automated package completeness and cross-document reconciliation engine.
+  - Multi-document fraud detection for meal double-dipping (`KB-RULE-01-MEAL-DOUBLE-DIPPING` under §§ 163 & 170 ZP) cross-verifying hotel folios against separate breakfast expense receipts.
+- 📑 **2-Way Invoice vs Corporate Card Reconciliation Engine (`invoice_matcher.py` & Tab 4, v1.4.0):**
+  - Autonomous 2-way cross-check between OCR-extracted receipts/folios and corporate card banking feeds (`sample_data/invoice_matching_transactions.json`).
+  - Categorizes transactions into `EXACT_MATCH`, `AMOUNT_DISCREPANCY` (terminal tips), `ORPHAN_INVOICE` (out-of-pocket cash under § 151 ZP), `ORPHAN_CARD_TRANSACTION` (unsubstantiated spend), and `PERSONAL_CHARGE_OFFSET`.
+  - Seamlessly wired into Bedrock Claude Sonnet 4.5 `[💡 Explain]` modal dialogs with 1-click manager remediation and instant MoroSystems CERTIS payout.
+- 🛡️ **Komerční Banka Compliance & Fraud Engine (`backoffice_auditor.py`):**
+  - Deterministic audit rules matrix for Track 06 (weekend travel anomaly `KB-RULE-02` under § 156 ZP, SHA-256 legal audit seal validation `KB-RULE-03` under NSS 3 Afs 97/2025).
+  - Corporate card reconciliation (`KB-RULE-04`) matching declared travel with TSYS swipe timestamps.
+  - Financial netting algorithm offsetting personal card expenses against statutory per diems and out-of-pocket cash.
+- 💳 **MoroSystems Payments Sandbox Integration (`morosystems_client.py`):**
+  - Track 01 agentic money movement with human-in-the-loop authorization gate.
+  - Automated payout orders via CERTIS / SEPA Instant with cryptographic SHA-256 payout receipt seals.
+- 💬 **Conversational Payment Ops & Manager Remediation (`app.py`):**
+  - Multi-turn conversational chatbot powered by Bedrock Claude Sonnet 4.5 explaining audits and citing transactions.
+  - 1-click interactive remediation modal dialog allowing finance managers to auto-apply statutory deductions or override warnings with audit trail logging.
+- 🖥️ **4-Tab Executive Dashboard (`app.py`):**
+  - Tab 1: Proactive Card Stream Clustering & MoroSystems Payout (Track 01).
+  - Tab 2: Document & Receipt Compliance Audit with Multimodal OCR (Track 06).
+  - Tab 3: Komerční Banka Master Compliance Rules Matrix (7 Rules).
+  - Tab 4: 2-Way Invoice Matching & Banking Reconciliation (Tracks 01 & 06 Bridge).
+  - Pohoda XML export for enterprise ERP accounting sync.
+- 🧪 **Comprehensive Test & Demo Suite (`test_document_parser.py`, `tests/test_invoice_matcher.py`, `test_aws.py`, `demo_documents/`):**
+  - Fully verifiable self-contained testing suite with 6/6 automated document checks and 3/3 pytest smoke tests.
 
 ---
 

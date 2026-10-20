@@ -1,6 +1,6 @@
-# PerDiemo Copilot — Developer & AI Agent Specification (v1.1.15)
+# PerDiemo Copilot — Developer & AI Agent Specification (v1.4.0)
 
-> **Document Version:** 1.1.15  
+> **Document Version:** 1.4.0  
 > **Release Target:** The FinTechers Hackathon 2026 (Prague)  
 > **Tracks:**  
 > • 🎯 **Track 01:** Agentic Payments & Money Movement (*Challenge: The Self-Reconciling Merchant / Conversational Payment Ops*)  
@@ -11,7 +11,7 @@
 
 ## 1. System Mission & Core Directives
 
-PerDiemo Copilot is an autonomous agentic system designed to eliminate corporate travel expense fraud, automate statutory per diem calculations, reconcile corporate card transactions, and provide evidentiary audit defence for **Komerční banka** and enterprise accounting departments.
+PerDiemo Copilot is an autonomous agentic system designed to eliminate corporate travel expense fraud, automate statutory per diem calculations, reconcile corporate card transactions, cross-check submitted invoices against banking feeds, and provide evidentiary audit defence for **Komerční banka** and enterprise accounting departments.
 
 ### Primary Directives for Developers and AI Agents:
 1. **Statutory Compliance Above All:** Calculations must adhere strictly to the Czech Labour Code (*Zákon č. 262/2006 Sb., §§ 151–189*), mandatory meal deduction brackets (70% / 35% / 25%), and daily ČNB currency fixing rates.
@@ -26,7 +26,7 @@ PerDiemo Copilot is an autonomous agentic system designed to eliminate corporate
 
 ```mermaid
 flowchart TD
-    subgraph INTAKE["1. Multi-Modal Intake & Card Feeds"]
+    subgraph INTAKE["1. Multi-Modal Intake & Banking Feeds"]
         A["💳 TSYS Corporate Card Stream<br/>(POS swipes, flights, fuel, hotels, snacks)"] --> C
         B["🧾 Multi-Receipt & Folio Uploads<br/>(PDF, PNG, JPG, Boarding Passes, Folios)"] --> C
         C["🤖 agent_intake.py<br/>(Bedrock Claude Sonnet 4.5 in eu-central-1)"]
@@ -41,22 +41,30 @@ flowchart TD
     end
 
     subgraph AUDIT["3. Komerční Banka Compliance & Net Settlement"]
-        G --> H["🛡️ backoffice_auditor.py<br/>(KB Compliance & Cross-Document Fraud Engine)"]
+        G --> H["🛡️ backoffice_auditor.py<br/>(KB Compliance & Fraud Rules Engine)"]
         A --> H
         PKG --> H
         H --> I["📊 Audit Verdict & Color Coded Findings<br/>(APPROVED / FLAGGED / REJECTED)"]
         H --> J["💰 Net Settlement Formula<br/>(Statutory Per Diem + OOP Cash - Personal Card Offset)"]
     end
 
-    subgraph MONEY["4. Agentic Payments Sandbox (MoroSystems)"]
-        J --> K["💬 Conversational Payment Ops<br/>(Bedrock Claude Multi-Turn Chatbot)"]
+    subgraph MATCHING["4. 2-Way Invoice vs Card Cross-Reconciliation (v1.4.0)"]
+        B --> MTC["📑 invoice_matcher.py<br/>(Fuzzy Matcher, Variance & Orphan Detector)"]
+        A --> MTC
+        MTC --> MTR["🔍 Reconciliation Matrix & Net Impact<br/>(EXACT_MATCH, DISCREPANCY, OOP_CASH, MISSING_INVOICE)"]
+    end
+
+    subgraph MONEY["5. Agentic Payments Sandbox (MoroSystems)"]
+        J --> K["💬 Conversational Payment Ops & Explain Dialogs<br/>(Bedrock Claude Multi-Turn Chatbot & 1-Click Remediation)"]
+        MTR --> K
         K -->|Human Authorization Gate| L["🚀 MoroSystems Payments Sandbox<br/>(CERTIS / SEPA Instant Bank Transfer)"]
         L --> M["📑 Payout Receipt with SHA-256 Seal"]
     end
 
-    subgraph UI["5. Presentation Layer (Streamlit)"]
-        I --> N["🖥️ app.py (3-Tab Executive Dashboard)"]
+    subgraph UI["6. Presentation Layer (Streamlit)"]
+        I --> N["🖥️ app.py (4-Tab Executive Dashboard)"]
         J --> N
+        MTR --> N
         M --> N
         N --> O["📥 Pohoda XML / Accounting Export"]
     end
@@ -64,7 +72,7 @@ flowchart TD
 
 ---
 
-## 3. Key Architectural Decisions (ADRs v1.1.15)
+## 3. Key Architectural Decisions (ADRs v1.4.0)
 
 ### ADR-01: Bedrock Cross-Region EU Inference Profile
 * **Decision:** Bedrock Claude model ID is set to `eu.anthropic.claude-sonnet-4-5-20250929-v1:0`.
@@ -80,7 +88,7 @@ flowchart TD
 * **Rationale:** LLMs hallucinate complex Czech legislative nuances (§ 163 and § 170 ZP) and floating-point exchange rate math. Claude Sonnet 4.5 parses unstructured documents into structured JSON; the PerDiemo statutory engine performs the mathematical and legal calculation.
 
 ### ADR-04: Resilient Self-Contained Testing & Offline Fallbacks
-* **Decision:** `test_aws.py` and `agent_intake.py` contain zero-dependency fallback parsers and mock generators.
+* **Decision:** `test_aws.py`, `agent_intake.py`, and `invoice_matcher.py` contain zero-dependency fallback parsers and mock generators.
 * **Rationale:** Allows continuous offline development, live demo resilience, and rapid testing even if AWS SSO tokens expire or network connections drop.
 
 ### ADR-05: Human-in-the-Loop Execution Gate for Autonomous Payments
@@ -98,6 +106,17 @@ flowchart TD
 ### ADR-08: Multi-Modal Document Package Intake & Cross-Document Fraud Detection (v1.1.15)
 * **Decision:** Bedrock multimodal document parsing supports multi-file drag-and-drop intake (`agent_intake.extract_from_file`), pure-Python PDF extraction (`pypdf`), and automated cross-document package auditing (`document_package_auditor.py`). The auditor automatically detects meal double-dipping fraud (`KB-RULE-01`) when a hotel folio (breakfast included) and a separate breakfast receipt are uploaded in the same expense package.
 * **Rationale:** Replaces artificial manual simulation toggles with deterministic AI-assisted cross-document verification. Using `pypdf` ensures zero external OS binary dependencies (no poppler required on Windows) while maintaining resilient offline mock fallbacks.
+
+### ADR-09: 2-Way Invoice vs. Banking Cross-Reconciliation & AI Remediation (v1.4.0)
+* **Decision:** Implemented a dedicated 4th tab (`Tab 4: Invoice Matching & Banking Reconciliation`) driven by `invoice_matcher.py` and static TSYS transaction feed `sample_data/invoice_matching_transactions.json`. The engine classifies each document-to-card pair into:
+  - `EXACT_MATCH` (100% matched company spend)
+  - `AMOUNT_DISCREPANCY` (POS tip / gratuity variance)
+  - `ORPHAN_INVOICE` (Out-of-pocket cash payable under § 151 ZP)
+  - `ORPHAN_CARD_TRANSACTION` (Unsubstantiated corporate card swipe with missing tax invoice)
+  - `PERSONAL_CHARGE_OFFSET` (Personal card spend deducted from payout)
+* **Explain & Remediation:** Integrated `render_audit_finding(..., show_explain=True)` linking directly to the Bedrock Claude Sonnet 4.5 explanation modal and one-click manager remediation buttons (`⚡ Authorize Dining Tip Variance`, `📧 Request Missing Tax Invoice`, `👔 Fast-Track Manager Approval`).
+* **HTML Integrity:** Implemented `render_clean_html()` to strip leading whitespace and prevent Markdown code-block escaping in Streamlit.
+* **Rationale:** Provides corporate banks (Komerční banka) and CFOs with end-to-end 2-way evidentiary cross-matching between accounting invoices and bank card settlement feeds.
 
 ---
 
@@ -215,6 +234,7 @@ flowchart TD
 | `KB-RULE-02-WEEKEND-TRAVEL-ANOMALY` | `WARNING` / `PASSED` | +25 | § 156 ZP | Detects trip legs occurring on Saturday or Sunday. Requires explicit business justification keywords (e.g. `conference`, `urgent`, `veletrh`, `audit`) in `ucel_cesty`. |
 | `KB-RULE-03-AUDIT-FINGERPRINT` | `CRITICAL` / `PASSED` | +50 | NSS 3 Afs 97/2025 | Verifies presence and integrity of a 64-character SHA-256 cryptographic seal generated by the statutory calculation engine. |
 | `KB-RULE-04-CARD-RECONCILIATION` | `INFO` | +0 | KB Open Banking | Cross-references declared travel dates with actual corporate credit card swipe timestamps from bank feeds. |
+| `KB-RULE-05-INVOICE-TRANSACTION-MATCH` | `CRITICAL` / `WARNING` / `PASSED` | +45 | § 151 ZP / KB Audit | Cross-checks submitted receipts and invoices against corporate card settlement feeds (`invoice_matcher.py`). Flags unsubstantiated card spend (+45 risk) and POS tip variances (+25 risk) with 1-click AI manager remediation. |
 
 ### 5.2 Financial Settlement & Balancing Rules
 | Rule ID | Operation | Balance Impact | Description |

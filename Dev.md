@@ -60,9 +60,11 @@ See `.env.example` for all configuration options.
 ├── app.py                       # Streamlit dashboard entry point
 ├── agent_intake.py              # Bedrock document extraction & conversational agent
 ├── backoffice_auditor.py        # KB compliance & net settlement engine
+├── invoice_matcher.py           # 2-way invoice vs banking reconciliation engine (v1.4.0)
 ├── document_package_auditor.py  # Document package completeness & fraud validator
 ├── perdiemo_client.py           # PerDiemo cloud statutory API client
 ├── morosystems_client.py        # MoroSystems payments sandbox client
+├── sample_data/                 # Corporate card & invoice matching JSON feeds
 ├── demo_documents/              # Synthetic PDFs for 1-click hackathon demos
 ├── datasets/                    # Sample CNB & MerchantKYB documents
 └── tests/                       # pytest test suite
