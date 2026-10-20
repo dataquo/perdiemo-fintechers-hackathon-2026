@@ -283,11 +283,6 @@ with tab_upload:
         with col_opt2:
             currency = st.selectbox("Display", ["CZK", "EUR"], index=0)
 
-        fraud_sim = st.checkbox(
-            "🔬 Simulate compliance violation",
-            help="Hide hotel breakfast from declaration to test fraud detection"
-        )
-
         process_btn = st.button(
             "🚀 Process Documents",
             type="primary",
@@ -368,10 +363,6 @@ with tab_upload:
 
                 # Sort itinerary
                 combined_itinerary = sorted(combined_itinerary, key=lambda x: x.get("datum", ""))
-
-                # Apply fraud simulation
-                if fraud_sim and hotel_data.get("breakfast_included"):
-                    combined_meals = {}
 
                 # Display extraction results
                 st.markdown("**Extracted from documents:**")
@@ -655,11 +646,7 @@ with tab_text:
             help="Describe your trip including dates, locations, transport, hotels, and meals"
         )
 
-        col_yr, col_opt = st.columns(2)
-        with col_yr:
-            text_year = st.selectbox("Tax Year", [2025, 2026], index=0, key="text_year")
-        with col_opt:
-            text_fraud = st.checkbox("🔬 Simulate violation", key="text_fraud")
+        text_year = st.selectbox("Tax Year", [2025, 2026], index=0, key="text_year")
 
         text_process_btn = st.button(
             "🚀 Process Trip Description",
@@ -672,9 +659,6 @@ with tab_text:
         if text_process_btn and trip_description:
             with st.spinner("🤖 AI parsing trip description..."):
                 text_extraction = agent.extract_from_text(trip_description)
-
-            if text_fraud and text_extraction.get("hotel_info", {}).get("breakfast_included"):
-                text_extraction["bezplatna_strava"] = {}
 
             st.markdown("### 📋 Extracted Itinerary")
 
