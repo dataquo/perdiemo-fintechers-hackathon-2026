@@ -16,6 +16,10 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .coverage
+.ruff_cache/
+
+# uv lock file (optional - uncomment to track)
+# uv.lock
 
 # OS metadata
 .DS_Store

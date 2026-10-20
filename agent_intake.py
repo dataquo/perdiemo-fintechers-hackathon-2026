@@ -10,7 +10,8 @@ import os
 import sys
 import json
 import base64
-from typing import Dict, Any, Optional
+import io
+from typing import Dict, Any, Optional, List, Union
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 if hasattr(sys.stderr, 'reconfigure'):
@@ -21,6 +22,24 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+try:
+    from pypdf import PdfReader
+    HAS_PYPDF = True
+except ImportError:
+    HAS_PYPDF = False
+
+try:
+    from pdf2image import convert_from_bytes
+    HAS_PDF2IMAGE = True
+except ImportError:
+    HAS_PDF2IMAGE = False
+
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 
 AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
 # In Europe, Claude runs through EU cross-region inference profiles, so model ID needs 'eu.' prefix:
@@ -149,7 +168,7 @@ class BedrockIntakeAgent:
         base64_data = base64.b64encode(image_bytes).decode("utf-8")
         body = {
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "system": EXTRACTION_SYSTEM_PROMPT,
             "messages": [
                 {
@@ -184,6 +203,109 @@ class BedrockIntakeAgent:
         except Exception as e:
             print(f"[ERROR] Bedrock multimodal call failed: {e}. Using fallback mock.")
             return self._mock_extraction("Uploaded document image")
+
+    def extract_from_pdf(self, pdf_bytes: bytes) -> Dict[str, Any]:
+        """Extract from PDF by converting pages to images and processing with vision."""
+        # Try pdf2image first (converts PDF to images for vision processing)
+        if HAS_PDF2IMAGE:
+            try:
+                images = convert_from_bytes(pdf_bytes, dpi=200, first_page=1, last_page=5)
+                all_extractions = []
+
+                for img in images:
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='PNG')
+                    img_bytes = img_byte_arr.getvalue()
+
+                    extraction = self.extract_from_image(img_bytes, mime_type="image/png")
+                    if extraction and extraction.get("itinerary"):
+                        all_extractions.append(extraction)
+
+                if all_extractions:
+                    return self._merge_extractions(all_extractions)
+
+            except Exception as e:
+                print(f"[WARN] pdf2image extraction failed: {e}. Trying text fallback.")
+
+        # Fallback to text extraction
+        return self._extract_pdf_text_fallback(pdf_bytes)
+
+    def _extract_pdf_text_fallback(self, pdf_bytes: bytes) -> Dict[str, Any]:
+        """Fallback: extract text from PDF and process as text."""
+        if HAS_PYPDF:
+            try:
+                reader = PdfReader(io.BytesIO(pdf_bytes))
+                text = ""
+                for page in reader.pages[:5]:  # Limit to first 5 pages
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                if text.strip():
+                    return self.extract_from_text(text)
+            except Exception as e:
+                print(f"[WARN] pypdf text extraction failed: {e}")
+        return self._mock_extraction("PDF document")
+
+    def extract_from_file(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
+        """Auto-detect file type and extract accordingly."""
+        filename_lower = filename.lower()
+
+        if filename_lower.endswith(".pdf"):
+            return self.extract_from_pdf(file_bytes)
+        elif filename_lower.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+            mime_map = {
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".webp": "image/webp",
+                ".gif": "image/gif"
+            }
+            ext = "." + filename_lower.rsplit(".", 1)[-1]
+            mime_type = mime_map.get(ext, "image/jpeg")
+            return self.extract_from_image(file_bytes, mime_type)
+        elif filename_lower.endswith((".txt", ".md")):
+            text = file_bytes.decode("utf-8", errors="ignore")
+            return self.extract_from_text(text)
+        else:
+            # Try as image first, then text
+            try:
+                return self.extract_from_image(file_bytes, "image/jpeg")
+            except:
+                text = file_bytes.decode("utf-8", errors="ignore")
+                return self.extract_from_text(text)
+
+    def _merge_extractions(self, extractions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge multiple page extractions into a single result."""
+        if not extractions:
+            return self._mock_extraction("merged document")
+
+        merged = extractions[0].copy()
+
+        for ext in extractions[1:]:
+            # Merge itineraries
+            if ext.get("itinerary"):
+                merged.setdefault("itinerary", []).extend(ext["itinerary"])
+
+            # Merge free meals
+            if ext.get("bezplatna_strava"):
+                merged.setdefault("bezplatna_strava", {}).update(ext["bezplatna_strava"])
+
+            # Take hotel info if not present
+            if ext.get("hotel_info") and not merged.get("hotel_info", {}).get("hotel_name"):
+                merged["hotel_info"] = ext["hotel_info"]
+
+            # Take purpose if not present
+            if ext.get("ucel_cesty") and not merged.get("ucel_cesty"):
+                merged["ucel_cesty"] = ext["ucel_cesty"]
+
+        # Sort itinerary by date
+        if merged.get("itinerary"):
+            merged["itinerary"] = sorted(
+                merged["itinerary"],
+                key=lambda x: x.get("datum", "")
+            )
+
+        return merged
 
     def _mock_extraction(self, input_summary: str) -> Dict[str, Any]:
         """Deterministic mock data for rapid development before AWS keys are entered."""

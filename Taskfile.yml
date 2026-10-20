@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+vars:
+  STREAMLIT_PORT: 8501
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  setup:
+    desc: Create venv and install all dependencies (run once)
+    cmds:
+      - uv venv
+      - uv sync --all-extras
+
+  install:
+    desc: Sync dependencies (after setup)
+    cmds:
+      - uv sync --all-extras
+
+  dev:
+    desc: Start Streamlit dashboard for demo
+    cmds:
+      - uv run streamlit run app.py --server.port {{.STREAMLIT_PORT}} --server.headless true
+    env:
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+
+  dev:open:
+    desc: Start Streamlit and open browser automatically
+    cmds:
+      - uv run streamlit run app.py --server.port {{.STREAMLIT_PORT}}
+    env:
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+
+  test:
+    desc: Run tests
+    cmds:
+      - uv run pytest -v
+
+  lint:
+    desc: Run linting checks
+    cmds:
+      - uv run ruff check .
+
+  format:
+    desc: Auto-format code with ruff
+    cmds:
+      - uv run ruff format .
+      - uv run ruff check --fix .
+
+  aws:check:
+    desc: Verify AWS credentials and Bedrock access
+    cmds:
+      - uv run python test_aws.py
+
+  clean:
+    desc: Remove Python cache files
+    cmds:
+      - cmd: rm -rf __pycache__ .pytest_cache .ruff_cache .venv
+        platforms: [linux, darwin]
+      - cmd: if exist __pycache__ rmdir /s /q __pycache__
+        platforms: [windows]
+      - cmd: if exist .pytest_cache rmdir /s /q .pytest_cache
+        platforms: [windows]
+      - cmd: if exist .venv rmdir /s /q .venv
+        platforms: [windows]
+
+  add:
+    desc: Add a new dependency (usage: task add -- <package>)
+    cmds:
+      - uv add {{.CLI_ARGS}}
