@@ -218,6 +218,20 @@ $$\text{Net Payout} = \max\Big(0,\; \text{Statutory Per Diem} + \text{Out-of-Poc
 * $40 \le \text{Risk Score} < 70 \implies$ **`FLAGGED_FOR_REVIEW`** (Requires accountant approval)
 * $\text{Risk Score} < 40 \implies$ **`APPROVED`** (Ready for automated MoroSystems instant payout)
 
+### 5.5 One-Click Manager Remediation Workflow (Track 06 Automation)
+To eliminate manual back-and-forth between employees and accounting departments, the Copilot provides interactive 1-click remediation buttons inside the `💡 Explain` dialog:
+* **Meal Double-Dipping Remediation:** Auto-applies statutory meal deductions (70%/35%/25% under § 163 ZP) or confirms Room-Only folio rate with zero deduction.
+* **Weekend Travel Remediation:** Auto-attaches documented business urgency justifications under § 156 ZP.
+* **Immediate Re-Sealing:** Instantly recalculates statutory allowances via PerDiemo Cloud Engine, resets risk score to 0/100 (`APPROVED`), and generates an immutable SHA-256 cryptographic seal.
+
+### 5.6 Manager Persona Instant Payout Execution (Track 06 & Track 01 Bridge)
+* **Compliance-Gated Disbursement:** Both Tab 1 (Card Stream) and Tab 2 (Document Claims) connect directly to the MoroSystems Payments Sandbox for instant reimbursement.
+* **Decision Gate Logic:**
+  * `APPROVED`: Direct instant execution (`💸 Authorize Instant Payout`).
+  * `FLAGGED_FOR_REVIEW`: Explicit manager sign-off override recorded in audit trail (`👔 Manager Sign-Off & Authorize Payout`).
+  * `REJECTED`: Instant payout strictly blocked until violations are remediated via the 1-click workflow.
+* **ERP Integration:** Pohoda XML protocol export is embedded as an auxiliary download for seamless general ledger synchronization.
+
 ---
 
 ## 6. Development Workflow & Daily Operations

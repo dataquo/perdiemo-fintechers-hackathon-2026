@@ -7,6 +7,7 @@ Designed for The FinTechers Hackathon 2026 (Prague):
 - TRACK 06: Finance Operations & Back-Office AI (Komerční banka Compliance & Statutory Per Diems)
 """
 import os
+import time
 import json
 import importlib
 import streamlit as st
@@ -151,6 +152,15 @@ st.markdown("""
         border: 1px solid rgba(59, 130, 246, 0.25);
         border-left: 5px solid #3b82f6;
     }
+    div[data-testid="stHorizontalBlock"] {
+        align-items: center !important;
+    }
+    div[data-testid="stColumn"] button[kind="secondary"] {
+        white-space: nowrap !important;
+        padding: 0.35rem 0.55rem !important;
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -164,8 +174,124 @@ def get_services():
 
 client, agent, auditor, moro_client = get_services()
 
-@st.dialog("🤖 PerDiemo Copilot — AI Rule Advisory & Suggestions", width="large")
-def show_rule_explanation_dialog(finding: dict, trip_context: dict):
+def apply_remediation(rule_id: str, remediation_type: str, key_prefix: str = "tab1"):
+    """
+    Executes automated 1-click remediation for compliance anomalies, recalculating
+    statutory per diems through the PerDiemo Cloud Engine and issuing an updated SHA-256 seal.
+    """
+    action_summary = ""
+
+    if key_prefix == "tab1" and "card_settlement" in st.session_state:
+        card_settlement = st.session_state["card_settlement"]
+        clustered = card_settlement["clustered"]
+        stat_itinerary = clustered.get("statutory_itinerary", {})
+        tsys_data = st.session_state.get("tsys_data", {})
+        tx_list = tsys_data.get("transactions", [])
+        oop_list = tsys_data.get("out_of_pocket_cash", [])
+
+        if remediation_type == "apply_meal_deduction":
+            dates = set()
+            for leg in stat_itinerary.get("itinerary", []):
+                d = str(leg.get("datum", ""))[:10]
+                if d:
+                    dates.add(d)
+            if not dates and "detected_trip" in clustered:
+                st_date = clustered["detected_trip"].get("start_time", "")[:10]
+                if st_date:
+                    dates.add(st_date)
+            for d in dates:
+                stat_itinerary.setdefault("bezplatna_strava", {})[d] = ["snidane"]
+            stat_itinerary.setdefault("hotel_info", {})["breakfast_included"] = True
+            action_summary = "Applied mandatory statutory meal reduction (70%/25% under § 163 ZP) for breakfast dates."
+
+        elif remediation_type == "confirm_room_only":
+            stat_itinerary.setdefault("hotel_info", {})["breakfast_included"] = False
+            stat_itinerary["bezplatna_strava"] = {}
+            action_summary = "Confirmed Room-Only accommodation without complimentary breakfast; preserved 100% statutory per diem (§§ 163 & 170 ZP)."
+
+        elif remediation_type == "attach_weekend_justification":
+            curr_purpose = stat_itinerary.get("ucel_cesty", "Business Negotiations")
+            stat_itinerary["ucel_cesty"] = f"{curr_purpose} — [Mandatory Client Meeting & Urgent On-Site Deployment (§ 156 ZP Approved)]"
+            action_summary = "Attached statutory business urgency justification for weekend travel legs under § 156 ZP."
+
+        elif remediation_type == "manager_overrule":
+            action_summary = "Line manager authorized policy compliance waiver under corporate expense rule exceptions."
+
+        # Re-run Statutory Engine & Auditor
+        trips_payload = [{
+            "id_cesty": "TSYS-KB-AUTO-001",
+            "ucel_cesty": stat_itinerary.get("ucel_cesty", "Business"),
+            "vlastnictvi_vozidla": stat_itinerary.get("typ_vozidla", "SLUZEBNI"),
+            "zamestnanec_jednatel": stat_itinerary.get("zamestnanec_jednatel", "Alex Miller"),
+            "spolecnost": stat_itinerary.get("spolecnost", "KB Enterprise Client"),
+            "bezplatna_strava": stat_itinerary.get("bezplatna_strava", {}),
+            "itinerar": stat_itinerary.get("itinerary", [])
+        }]
+        calc_result = client.calculate(trips_payload, year=2025)
+        settlement = auditor.reconcile_and_settle(stat_itinerary, calc_result, tx_list, oop_list)
+
+        st.session_state["card_settlement"] = {
+            "clustered": clustered,
+            "calc": calc_result,
+            "settlement": settlement
+        }
+        st.session_state.pop("payout_receipt", None)
+
+    elif key_prefix == "tab2" and "doc_audit_result" in st.session_state:
+        doc_res = st.session_state["doc_audit_result"]
+        extracted = doc_res["extracted"]
+
+        if remediation_type == "apply_meal_deduction":
+            dates = set()
+            for leg in extracted.get("itinerary", []):
+                d = str(leg.get("datum", ""))[:10]
+                if d:
+                    dates.add(d)
+            for d in dates:
+                extracted.setdefault("bezplatna_strava", {})[d] = ["snidane"]
+            extracted.setdefault("hotel_info", {})["breakfast_included"] = True
+            action_summary = "Applied mandatory statutory meal reduction (70%/25% under § 163 ZP) for breakfast dates."
+
+        elif remediation_type == "confirm_room_only":
+            extracted.setdefault("hotel_info", {})["breakfast_included"] = False
+            extracted["bezplatna_strava"] = {}
+            action_summary = "Confirmed Room-Only accommodation without complimentary breakfast; preserved 100% statutory per diem."
+
+        elif remediation_type == "attach_weekend_justification":
+            curr_purpose = extracted.get("ucel_cesty", "Business Negotiations")
+            extracted["ucel_cesty"] = f"{curr_purpose} — [Mandatory Client Meeting & Urgent On-Site Deployment (§ 156 ZP Approved)]"
+            action_summary = "Attached statutory business urgency justification for weekend travel legs under § 156 ZP."
+
+        elif remediation_type == "manager_overrule":
+            action_summary = "Line manager authorized policy compliance waiver under corporate expense rule exceptions."
+
+        trips_payload = [{
+            "id_cesty": "KB-DOC-AUDIT-001",
+            "ucel_cesty": extracted.get("ucel_cesty", "Business"),
+            "vlastnictvi_vozidla": extracted.get("typ_vozidla", "SLUZEBNI"),
+            "zamestnanec_jednatel": extracted.get("zamestnanec_jednatel", "Alex Miller"),
+            "spolecnost": extracted.get("spolecnost", "KB Enterprise Client"),
+            "bezplatna_strava": extracted.get("bezplatna_strava", {}),
+            "itinerar": extracted.get("itinerary", [])
+        }]
+        calc_result = client.calculate(trips_payload, year=2025)
+        audit_report = auditor.audit_trip(extracted, calc_result)
+
+        st.session_state["doc_audit_result"] = {
+            "extracted": extracted,
+            "calc": calc_result,
+            "audit": audit_report
+        }
+        st.session_state.pop("doc_payout_receipt", None)
+
+    # Record in Copilot chat thread
+    if "chat_thread" not in st.session_state:
+        st.session_state["chat_thread"] = []
+    log_msg = f"⚡ **Manager Remediation Executed for {rule_id}**: {action_summary} Statutory per diems recalculated via PerDiemo cloud engine and sealed with new SHA-256 signature."
+    st.session_state["chat_thread"].append({"role": "assistant", "content": log_msg})
+
+@st.dialog("🤖 PerDiemo Copilot — AI Rule Advisory & One-Click Remediation", width="large")
+def show_rule_explanation_dialog(finding: dict, trip_context: dict, key_prefix: str = "tab1", dialog_key: str = ""):
     sev = str(finding.get("severity", "INFO")).upper()
     rule = finding.get("rule", "KB-RULE")
     msg = finding.get("message", "")
@@ -191,8 +317,12 @@ def show_rule_explanation_dialog(finding: dict, trip_context: dict):
         </div>
     """, unsafe_allow_html=True)
 
-    with st.spinner("🤖 Bedrock Claude Sonnet 4.5 analyzing statutory rules & formulating advice..."):
-        ai_reply = agent.explain_audit_rule(finding, trip_context)
+    # Cache AI explanation to prevent expensive re-invocation on dialog button interactions
+    cache_key = f"cache_explain_{key_prefix}_{rule}_{sev}"
+    if cache_key not in st.session_state:
+        with st.spinner("🤖 Bedrock Claude Sonnet 4.5 analyzing statutory rules & formulating advice..."):
+            st.session_state[cache_key] = agent.explain_audit_rule(finding, trip_context)
+    ai_reply = st.session_state[cache_key]
 
     st.markdown("#### 🧠 Copilot Audit Assessment & Guidance")
     st.markdown(ai_reply)
@@ -206,12 +336,120 @@ def show_rule_explanation_dialog(finding: dict, trip_context: dict):
         st.session_state["chat_thread"].append({"role": "user", "content": prompt_q})
         st.session_state["chat_thread"].append({"role": "assistant", "content": ai_reply})
 
+    # =========================================================================
+    # ⚡ ONE-CLICK REMEDIATION WORKFLOW (MANAGER APPROVAL)
+    # =========================================================================
+    st.markdown("---")
+    if sev in ["CRITICAL", "WARNING"]:
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(245, 158, 11, 0.08) 100%); padding: 1rem 1.2rem; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.3); margin-bottom: 1rem;">
+                <div style="font-size: 1.05rem; font-weight: 800; color: #b45309; display: flex; align-items: center; gap: 8px;">
+                    <span>⚡</span> <span>Manager Action Workflow: One-Click Remediation</span>
+                </div>
+                <div style="font-size: 0.84rem; color: #475569; margin-top: 4px;">
+                    Save valuable back-office approval time. Click a recommended solution below to automatically adjust statutory declarations, recompute allowances via PerDiemo engine, and generate a new SHA-256 seal.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if "MEAL-DOUBLE-DIPPING" in rule or "RULE-01" in rule:
+            c_act1, c_act2 = st.columns(2)
+            with c_act1:
+                st.markdown("**Option A (Statutory Deduction):**")
+                st.caption("Apply statutory meal deduction (70%/25% under § 163 ZP) for breakfast days.")
+                if st.button("⚡ Apply Meal Reduction & Recalculate", type="primary", use_container_width=True, key=f"rem_deduct_{rule}_{key_prefix}"):
+                    if dialog_key:
+                        st.session_state[dialog_key] = False
+                    st.session_state.pop(cache_key, None)
+                    apply_remediation(rule, "apply_meal_deduction", key_prefix)
+                    st.toast("🎉 Applied meal deduction (-70%/25%)! Recalculated & Re-sealed.", icon="⚡")
+                    st.rerun()
+            with c_act2:
+                st.markdown("**Option B (Folio Verification):**")
+                st.caption("Confirm hotel booking was Room-Only; waive breakfast deduction.")
+                if st.button("📄 Confirm Room-Only Folio (Preserve 100%)", use_container_width=True, key=f"rem_room_{rule}_{key_prefix}"):
+                    if dialog_key:
+                        st.session_state[dialog_key] = False
+                    st.session_state.pop(cache_key, None)
+                    apply_remediation(rule, "confirm_room_only", key_prefix)
+                    st.toast("🎉 Room-only confirmed! 100% per diem preserved & Re-sealed.", icon="📄")
+                    st.rerun()
+
+        elif "WEEKEND-TRAVEL" in rule or "RULE-02" in rule:
+            st.markdown("**Recommended Remediation:**")
+            st.caption("Attach documented business urgency justification to satisfy Czech tax authorities (§ 156 ZP).")
+            c_wk1, c_wk2 = st.columns([1.5, 1])
+            with c_wk1:
+                if st.button("⚡ Auto-Attach Business Justification & Approve", type="primary", use_container_width=True, key=f"rem_wknd_{rule}_{key_prefix}"):
+                    if dialog_key:
+                        st.session_state[dialog_key] = False
+                    st.session_state.pop(cache_key, None)
+                    apply_remediation(rule, "attach_weekend_justification", key_prefix)
+                    st.toast("🎉 Justification attached! Warning cleared & Re-sealed.", icon="⚡")
+                    st.rerun()
+            with c_wk2:
+                if st.button("👔 Approve with Manager Discretion", use_container_width=True, key=f"rem_wknd_mgr_{rule}_{key_prefix}"):
+                    if dialog_key:
+                        st.session_state[dialog_key] = False
+                    st.session_state.pop(cache_key, None)
+                    apply_remediation(rule, "manager_overrule", key_prefix)
+                    st.toast("🎉 Manager approval recorded!", icon="👔")
+                    st.rerun()
+
+        elif "AUDIT-FINGERPRINT" in rule or "RULE-03" in rule:
+            st.markdown("**Recommended Remediation:**")
+            st.caption("Re-run the calculation through the PerDiemo Cloud Engine to generate a verified 64-char SHA-256 seal.")
+            if st.button("🔒 Re-Calculate & Generate Cryptographic Seal", type="primary", use_container_width=True, key=f"rem_seal_{rule}_{key_prefix}"):
+                if dialog_key:
+                    st.session_state[dialog_key] = False
+                st.session_state.pop(cache_key, None)
+                apply_remediation(rule, "recalculate_seal", key_prefix)
+                st.toast("🎉 Fresh SHA-256 seal generated!", icon="🔒")
+                st.rerun()
+
+        else:
+            st.markdown("**Recommended Remediation:**")
+            st.caption("Authorize policy exception under approving line-manager authority.")
+            if st.button("👔 Fast-Track Manager Approval & Record Memo", type="primary", use_container_width=True, key=f"rem_gen_{rule}_{key_prefix}"):
+                if dialog_key:
+                    st.session_state[dialog_key] = False
+                st.session_state.pop(cache_key, None)
+                apply_remediation(rule, "manager_overrule", key_prefix)
+                st.toast("🎉 Manager approval recorded!", icon="👔")
+                st.rerun()
+
+    else:
+        st.markdown("""
+            <div style="background: rgba(34, 197, 94, 0.08); padding: 0.9rem 1.1rem; border-radius: 8px; border: 1px solid rgba(34, 197, 94, 0.25);">
+                <div style="font-weight: 700; color: #166534; display: flex; align-items: center; gap: 6px;">
+                    <span>✅</span> <span>Fully Compliant — No Manager Action Required</span>
+                </div>
+                <div style="font-size: 0.84rem; color: #475569; margin-top: 3px;">
+                    This expense leg satisfies Czech Labour Code (§§ 151–189 ZP) statutory criteria and Komerční banka compliance policies.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Optional action for Tab 1 to test applying meal deduction even if room-only
+        if "MEAL-DOUBLE-DIPPING" in rule or "RULE-01" in rule:
+            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+            st.caption("💡 *Manager Option: If an itemized folio later reveals complimentary breakfast was consumed, you can apply the statutory reduction here:*")
+            if st.button("⚡ Apply Statutory Breakfast Reduction (-70%/25%)", use_container_width=False, key=f"rem_opt_deduct_{rule}_{key_prefix}"):
+                if dialog_key:
+                    st.session_state[dialog_key] = False
+                st.session_state.pop(cache_key, None)
+                apply_remediation(rule, "apply_meal_deduction", key_prefix)
+                st.toast("Applied meal reduction & re-calculated!", icon="⚡")
+                st.rerun()
+
     st.divider()
     c_btn1, c_btn2 = st.columns([1.2, 0.8])
     with c_btn1:
-        st.caption("💬 This explanation and advice has been saved to your **Conversational Copilot Chat** below.")
+        st.caption("💬 Q&A and manager actions are automatically recorded in your **Copilot Chat Thread** below.")
     with c_btn2:
-        if st.button("✖️ Close Dialog", use_container_width=True, key=f"dlg_close_{rule}"):
+        if st.button("✖️ Close Dialog", use_container_width=True, key=f"dlg_close_{rule}_{key_prefix}"):
+            if dialog_key:
+                st.session_state[dialog_key] = False
             st.rerun()
 
 def render_audit_finding(finding, idx=0, show_explain=True, trip_context=None, key_prefix="t1"):
@@ -244,13 +482,16 @@ def render_audit_finding(finding, idx=0, show_explain=True, trip_context=None, k
     """
 
     if show_explain:
-        col_card, col_btn = st.columns([4.2, 0.9])
+        col_card, col_btn = st.columns([3.3, 1.2])
         with col_card:
             st.markdown(card_html, unsafe_allow_html=True)
         with col_btn:
-            st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
-            if st.button("💡 Explain", key=f"btn_explain_{key_prefix}_{rule}_{idx}", use_container_width=True, help=f"Ask AI Agent to explain {rule} and suggest actions"):
-                show_rule_explanation_dialog(finding, trip_context or {})
+            dlg_key = f"dlg_active_{key_prefix}_{rule}_{idx}"
+            if st.button("Explain", icon=":material/lightbulb:", key=f"btn_explain_{key_prefix}_{rule}_{idx}", use_container_width=True, help=f"Ask AI Agent to explain {rule} and suggest actions"):
+                st.session_state[dlg_key] = True
+
+            if st.session_state.get(dlg_key, False):
+                show_rule_explanation_dialog(finding, trip_context or {}, key_prefix=key_prefix, dialog_key=dlg_key)
     else:
         st.markdown(card_html, unsafe_allow_html=True)
 
@@ -574,6 +815,7 @@ with tab_doc:
         st.markdown("### 2. Komerční Banka Audit Protocol")
         if process_doc_btn or "doc_audit_result" in st.session_state:
             if process_doc_btn:
+                st.session_state.pop("doc_payout_receipt", None)
                 with st.spinner("🤖 Bedrock Agent extracting structured statutory itinerary..."):
                     extracted = agent.extract_from_text(trip_text)
                     if simulate_fraud:
@@ -602,6 +844,7 @@ with tab_doc:
                 }
 
             doc_res = st.session_state["doc_audit_result"]
+            extracted = doc_res.get("extracted", {})
             audit_report = doc_res["audit"]
             meta = doc_res["calc"].get("metadata", {})
 
@@ -614,24 +857,184 @@ with tab_doc:
             else:
                 st.error(f"❌ VERDICT: **EXPENSE REJECTED** (Risk Score: {score}/100)")
 
+            # Statutory metrics
             m1, m2, m3 = st.columns(3)
             m1.metric("Net Stravné", f"{meta.get('total_stravne_czk', 0):,.2f} CZK")
             m2.metric("Meal Deductions", f"-{meta.get('total_kraceni_czk', 0):,.2f} CZK")
             m3.metric("Pocket Money", f"{meta.get('total_kapesne_czk', 0):,.2f} CZK")
 
-            st.markdown("#### 🔍 Compliance Audit Findings")
-            doc_trip_ctx = {
-                "extracted_itinerary": extracted if "extracted" in locals() else {},
-                "audit_report": audit_report if "audit_report" in locals() else {},
-                "metadata": meta if "meta" in locals() else {}
-            }
-            for idx, finding in enumerate(audit_report.get("findings", [])):
-                render_audit_finding(finding, idx=idx, show_explain=True, trip_context=doc_trip_ctx, key_prefix="tab2")
+            # Calculate Net Reimbursement for Tab 2
+            total_stravne = float(meta.get("total_stravne_czk", 0.0) or 0.0)
+            total_kapesne = float(meta.get("total_kapesne_czk", 0.0) or 0.0)
+            total_nahrada = float(meta.get("total_nahrada_vozidlo_czk", 0.0) or 0.0)
+            doc_payout_amount = round(total_stravne + total_kapesne + total_nahrada, 2)
+            employee_name = extracted.get("zamestnanec_jednatel", "Alex Miller")
+            employee_iban = "CZ6501000000001928374650"
+            employee_id = "EMP-KB-0042"
 
-            st.divider()
-            st.markdown(f"**🔒 Cryptographic Audit Seal (SHA-256):**")
-            st.code(meta.get("verification_signature", "N/A"), language="text")
-            st.button("📥 Export Protocol to Pohoda XML / Accounting", type="secondary", use_container_width=True)
+            trip_dest = "Business Trip"
+            for leg in extracted.get("itinerary", []):
+                if leg.get("typ") in ["PRIJEZD", "LAYOVER"] or (leg.get("country_code") and leg.get("country_code") != "CZE"):
+                    trip_dest = leg.get("misto", "Business Trip")
+                    break
+            trip_ref = f"{trip_dest} Reimbursement ({extracted.get('ucel_cesty', 'Travel Claim')[:20]})"
+
+            # Net Settlement Card (Manager Overview)
+            st.markdown(f"""
+                <div class="settlement-card">
+                    <div style="font-size: 0.85rem; color: #166534; font-weight: 700; text-transform: uppercase;">
+                        Net Employee Reimbursement Calculated
+                    </div>
+                    <div style="font-size: 2.2rem; font-weight: 800; color: #0f172a; margin: 4px 0;">
+                        {doc_payout_amount:,.2f} CZK
+                    </div>
+                    <div style="font-size: 0.85rem; color: #334155;">
+                        Target IBAN: <code>{employee_iban}</code> ({employee_name})
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Audit findings
+            with st.expander("🔍 View Compliance Audit Findings & Cryptographic Seal", expanded=True):
+                doc_trip_ctx = {
+                    "extracted_itinerary": extracted,
+                    "audit_report": audit_report,
+                    "metadata": meta
+                }
+                for idx, finding in enumerate(audit_report.get("findings", [])):
+                    render_audit_finding(finding, idx=idx, show_explain=True, trip_context=doc_trip_ctx, key_prefix="tab2")
+
+                sig = meta.get("verification_signature", "N/A")
+                if sig and sig != "N/A":
+                    st.markdown('<div style="font-size: 0.78rem; font-weight: 700; color: #64748b; margin-top: 0.9rem; text-transform: uppercase;">🔒 Cryptographic Evidentiary Audit Seal (SHA-256):</div>', unsafe_allow_html=True)
+                    st.code(sig, language="text")
+
+            # MoroSystems Execution Gate (Manager Persona)
+            st.markdown("#### 🚀 MoroSystems Payments Sandbox Execution")
+            st.caption("Track 06 Guardrail: The manager persona authorizes instant payment transfer based on statutory compliance checks.")
+
+            if verdict == "APPROVED":
+                if st.button(
+                    f"💸 Authorize Instant Payout of {doc_payout_amount:,.2f} CZK via MoroSystems Rail",
+                    type="primary",
+                    use_container_width=True,
+                    key="tab2_moro_payout_approved"
+                ):
+                    with st.spinner("Executing payment order on MoroSystems sandbox..."):
+                        payout_resp = moro_client.execute_payout(
+                            recipient_name=employee_name,
+                            recipient_iban=employee_iban,
+                            amount=doc_payout_amount,
+                            currency="CZK",
+                            traveler_id=employee_id,
+                            trip_reference=trip_ref,
+                            explanation_log={
+                                "source": "Document Compliance Audit (Track 06)",
+                                "verdict": verdict,
+                                "risk_score": score,
+                                "statutory_stravne_czk": total_stravne,
+                                "statutory_kapesne_czk": total_kapesne,
+                                "audit_findings": [f.get("rule") for f in audit_report.get("findings", [])]
+                            },
+                            audit_seal=meta.get("verification_signature", "MOCK-SEAL")
+                        )
+                        st.session_state["doc_payout_receipt"] = payout_resp
+
+            elif verdict == "FLAGGED_FOR_REVIEW":
+                st.warning(
+                    f"⚠️ **Manager Review Gate:** This claim was flagged with Risk Score **{score}/100**. "
+                    "You may resolve issues with the **💡 Explain** buttons above, or authorize payout with manager sign-off."
+                )
+                if st.button(
+                    f"👔 Manager Sign-Off & Authorize Payout of {doc_payout_amount:,.2f} CZK via MoroSystems Rail",
+                    type="primary",
+                    use_container_width=True,
+                    key="tab2_moro_payout_flagged"
+                ):
+                    with st.spinner("Executing payment order on MoroSystems sandbox with manager approval sign-off..."):
+                        payout_resp = moro_client.execute_payout(
+                            recipient_name=employee_name,
+                            recipient_iban=employee_iban,
+                            amount=doc_payout_amount,
+                            currency="CZK",
+                            traveler_id=employee_id,
+                            trip_reference=trip_ref,
+                            explanation_log={
+                                "source": "Document Compliance Audit (Track 06)",
+                                "verdict": verdict,
+                                "risk_score": score,
+                                "manager_override": True,
+                                "approval_note": "Approved by line manager under corporate expense discretion policy.",
+                                "statutory_stravne_czk": total_stravne,
+                                "statutory_kapesne_czk": total_kapesne
+                            },
+                            audit_seal=meta.get("verification_signature", "MOCK-SEAL")
+                        )
+                        st.session_state["doc_payout_receipt"] = payout_resp
+
+            else:  # REJECTED
+                st.error(
+                    f"🚫 **Instant Payout Blocked:** Expense claim is **REJECTED** (Risk Score **{score}/100**) "
+                    "due to critical statutory or evidentiary violations. Instant payment cannot be dispatched. "
+                    "Please click **💡 Explain** on the flagged rules above to apply 1-click remediation before approving."
+                )
+                st.button(
+                    f"🚫 Payout Blocked (Risk Score {score}/100 — Resolve Violations Above)",
+                    disabled=True,
+                    use_container_width=True,
+                    key="tab2_moro_payout_blocked"
+                )
+
+            # Display Payment Receipt
+            if "doc_payout_receipt" in st.session_state:
+                receipt = st.session_state["doc_payout_receipt"]
+                st.success(f"🎉 **PAYMENT SETTLED!** {receipt.get('message')}")
+                r_col1, r_col2 = st.columns(2)
+                r_col1.markdown(f"**Payment ID:** `{receipt.get('payment_id')}`")
+                r_col1.markdown(f"**Clearing System:** `{receipt.get('clearing_system')}`")
+                r_col2.markdown(f"**Settled At:** `{receipt.get('settled_at')}`")
+                r_col2.markdown(f"**Verification Hash:** `{receipt.get('transfer_verification_hash')[:16]}...`")
+
+            # Pohoda XML Export Protocol
+            with st.expander("📥 Export Protocol to Pohoda XML / Accounting Ledger", expanded=False):
+                st.caption("Generate tax-compliant XML protocol for import into Pohoda, SAP, or Helios accounting systems.")
+                pohoda_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<dat:dataPack xmlns:dat="http://www.stormware.cz/schema/version_2/data.xsd"
+             xmlns:inv="http://www.stormware.cz/schema/version_2/invoice.xsd"
+             version="2.0" id="PD-{meta.get('verification_signature', '')[:12]}">
+  <dat:dataPackItem id="TRIP-DOC-01" version="2.0">
+    <inv:invoice version="2.0">
+      <inv:invoiceHeader>
+        <inv:invoiceType>receivable</inv:invoiceType>
+        <inv:text>Cestovní náhrady — {trip_ref}</inv:text>
+        <inv:partnerIdentity>
+          <inv:name>{employee_name}</inv:name>
+          <inv:accountNumber>{employee_iban}</inv:accountNumber>
+        </inv:partnerIdentity>
+        <inv:date>{time.strftime('%Y-%m-%d')}</inv:date>
+      </inv:invoiceHeader>
+      <inv:invoiceDetail>
+        <inv:invoiceItem>
+          <inv:text>Zákonné stravné a kapesné (§§ 151-189 ZP)</inv:text>
+          <inv:quantity>1</inv:quantity>
+          <inv:homeCurrency>
+            <inv:unitPrice>{doc_payout_amount}</inv:unitPrice>
+            <inv:price>{doc_payout_amount}</inv:price>
+          </inv:homeCurrency>
+          <inv:note>Evidentiary SHA-256: {meta.get('verification_signature', '')}</inv:note>
+        </inv:invoiceItem>
+      </inv:invoiceDetail>
+    </inv:invoice>
+  </dat:dataPackItem>
+</dat:dataPack>"""
+                st.download_button(
+                    label="📥 Download Pohoda XML Protocol",
+                    data=pohoda_xml,
+                    file_name=f"pohoda_travel_claim_{meta.get('verification_signature', '')[:8]}.xml",
+                    mime="application/xml",
+                    use_container_width=True,
+                    key="pohoda_download_tab2"
+                )
 
 # ==============================================================================
 # TAB 3: Komerční Banka Compliance & Audit Rules Matrix
